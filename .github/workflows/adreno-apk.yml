@@ -1,0 +1,116 @@
+name: adreno-apk
+
+# Builds Turnip (the Adreno Vulkan driver) from Mesa's source in an Arch Linux ARM chroot, then a
+# test APK with it bundled. The APK installs next to the store app (dev.omalauncher.adreno), so
+# trying it never touches the store app's Linux. Signed with the KEYSTORE_* secrets, so each build
+# updates the last one; without them it's debug-signed and has to be uninstalled before the next.
+on:
+  push:
+    branches: [adreno-gpu]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  turnip:
+    # Native aarch64, like the phone, so the driver is built for and against Arch Linux ARM's libraries.
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Arch Linux ARM chroot
+        run: |
+          sudo apt-get update -q && sudo apt-get install -yq libarchive-tools
+          base=http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz
+          cd "$RUNNER_TEMP"
+          curl -fsSL --retry 3 -o alarm.tar.gz $base
+          curl -fsSL --retry 3 -o alarm.tar.gz.sig $base.sig
+          # Arch Linux ARM Build System's signing key.
+          gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys 68B3537F39A313B3E574D06777193F152BDBE6A6
+          gpg --verify alarm.tar.gz.sig alarm.tar.gz
+          R="$RUNNER_TEMP/alarm"
+          mkdir "$R" && sudo bsdtar -xpf alarm.tar.gz -C "$R" && rm alarm.tar.gz
+          # pacman checks free space on a mount point.
+          sudo mount --bind "$R" "$R"
+          sudo mount -t proc proc "$R/proc"
+          sudo mount --rbind /dev "$R/dev"
+          sudo mount --rbind /sys "$R/sys"
+          sudo rm -f "$R/etc/resolv.conf" && sudo cp /etc/resolv.conf "$R/etc/resolv.conf"
+          sudo chroot "$R" /bin/bash -c '
+            set -e
+            pacman-key --init && pacman-key --populate archlinuxarm
+            # The kernel would only run its install hooks for nothing.
+            pacman -Rdd --noconfirm linux-aarch64 || true
+            pacman -Syu --noconfirm'
+
+      - name: Build Turnip
+        run: |
+          R="$RUNNER_TEMP/alarm"
+          sudo mkdir "$R/src" && git archive HEAD | sudo tar -x -C "$R/src"
+          sudo chroot "$R" /bin/bash -c 'cd /src && WORK=/work scripts/build-turnip.sh'
+          cp "$R/src/app/src/main/assets/gpu/libvulkan_freedreno.so.xz" .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: turnip
+          path: libvulkan_freedreno.so.xz
+
+  apk:
+    needs: turnip
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: turnip
+          path: app/src/main/assets/gpu
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Fetch proot
+        run: |
+          sudo apt-get update -q && sudo apt-get install -yq libarchive-tools
+          ndk=$(sed -n 's/^NDK_VERSION=//p' scripts/fetch-proot.sh)
+          [ -d "$ANDROID_HOME/ndk/$ndk" ] || yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk" >/dev/null
+          scripts/fetch-proot.sh
+
+      - name: Write the signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::warning::The KEYSTORE_* secrets aren't set; the APK is debug-signed"
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          cat > keystore.properties <<EOF
+          storeFile=$RUNNER_TEMP/upload.jks
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+
+      - name: Build
+        run: ./gradlew :app:assembleRelease -PapplicationIdSuffix=.adreno -PappLabel="Omalauncher Adreno"
+
+      - name: Checksum
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk omalauncher-adreno.apk
+          sha256sum omalauncher-adreno.apk app/src/main/assets/gpu/libvulkan_freedreno.so.xz | tee SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: omalauncher-adreno
+          path: |
+            omalauncher-adreno.apk
+            SHA256SUMS

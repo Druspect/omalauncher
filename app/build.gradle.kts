@@ -20,6 +20,9 @@ android {
         versionCode = 12
         versionName = "0.7.0"
         ndk { abiFilters += "arm64-v8a" }
+        // A test build that installs next to the store app: -PapplicationIdSuffix=.adreno -PappLabel="Omalauncher Adreno"
+        providers.gradleProperty("applicationIdSuffix").orNull?.let { applicationIdSuffix = it }
+        manifestPlaceholders["appLabel"] = providers.gradleProperty("appLabel").getOrElse("Omalauncher")
     }
 
     buildFeatures { buildConfig = true }

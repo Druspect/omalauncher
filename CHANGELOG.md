@@ -9,6 +9,7 @@ Dates are when the build was uploaded to Play.
 - Websites installed from a browser (Install app, or Add to home screen) show up
   on the home screen and in the app drawer, like other apps' shortcuts to home.
   Browsers didn't offer to install them before.
+- GPU acceleration for Linux apps on Adreno GPUs, like Snapdragon phones (Settings › linux).
 
 ## 0.7.0 (versionCode 12) – 2026-10-13
 

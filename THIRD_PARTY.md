@@ -37,6 +37,9 @@ Omalauncher is not affiliated with Omarchy.
 
 ## Bundled at build time
 
+`scripts/build-turnip.sh` builds Mesa's Turnip Vulkan driver (MIT) from the pinned Mesa release
+tarball into `app/src/main/assets/gpu/`; it is not in this repository.
+
 `scripts/fetch-proot.sh` downloads pinned versions of Termux's builds of PRoot (GPL-2.0),
 talloc (LGPL-3.0) and libandroid-shmem (BSD-3-Clause); they are not in this
 repository. The app lists every component it ships, with its license, under
