@@ -40,6 +40,9 @@ class OmaWatchBridge(private val context: Context) {
     /** Offline transcription for held-mic audio from the watch (omawatch D14). */
     val whisper = Whisper(appContext)
 
+    /** The Bluetooth socket carrier (omawatch D15), used whenever a watch is connected on it. */
+    val link = WatchLink(appContext, this)
+
     /** Wall clock for prompt expiry. Tests replace it. */
     internal var now: () -> Long = System::currentTimeMillis
 
@@ -50,8 +53,18 @@ class OmaWatchBridge(private val context: Context) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Unit>?): Boolean = size > 128
     }
 
+    /** Nearby devices (BLUETOOTH_CONNECT) is granted on this app's settings page. */
+    private fun openAppSettings() {
+        val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+            .setData(android.net.Uri.fromParts("package", appContext.packageName, null))
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { appContext.startActivity(intent) }
+        updateState { it.copy(line = "allow Nearby devices, then tap bluetooth") }
+    }
+
     /** Announces the phone key, and republishes the current theme as the data item. */
     fun announce() {
+        link.start()
         val key = phoneKey() ?: run {
             updateState { it.copy(line = "phone key unavailable") }
             return
@@ -121,6 +134,7 @@ class OmaWatchBridge(private val context: Context) {
             "pin", "confirm" -> if (!pinPendingWatch()) updateState { it.copy(line = "no watch to pin") }
             "unpair", "forget" -> forgetWatch()
             "voice", "model" -> Thread({ whisper.download() }, "whisper-model").start()
+            "bluetooth", "link" -> if (link.permitted) link.start() else openAppSettings()
         }
     }
 
@@ -143,7 +157,12 @@ class OmaWatchBridge(private val context: Context) {
     /** Called by the WearableListenerService. */
     fun onMessage(event: MessageEvent) {
         if (event.path != BRIDGE_PATH) return
-        val envelope = parse(event.data) ?: return
+        onEnvelopeBytes(event.data)
+    }
+
+    /** One envelope from either carrier: a Data Layer message or the Bluetooth socket. */
+    fun onEnvelopeBytes(bytes: ByteArray) {
+        val envelope = parse(bytes) ?: return
         synchronized(seenIds) {
             if (seenIds.put(envelope.id, Unit) != null) return
         }
@@ -206,6 +225,20 @@ class OmaWatchBridge(private val context: Context) {
                     pcm.outputStream().buffered().use { readAudioStream(input, it) }
                 }
             }.getOrNull() ?: return
+            handleAudio(pcm, stream)
+        } finally {
+            pcm.delete()
+            runCatching { channels.close(channel) }
+        }
+    }
+
+    /**
+     * A finished held-mic recording from either carrier: check the `audio` envelope against
+     * the pinned key and the PCM's size and hash, transcribe, and run the selected agent.
+     * The caller deletes [pcm].
+     */
+    fun handleAudio(pcm: File, stream: AudioStream) {
+        run {
             val envelope = parse(stream.envelope)?.takeIf { it.type == "audio" } ?: return
             val pinned = pinnedKey() ?: return
             if (!verify(envelope, pinned)) return
@@ -225,10 +258,15 @@ class OmaWatchBridge(private val context: Context) {
                 text.isBlank() || text == "[BLANK_AUDIO]" -> sendStatus("whisper", "failed", envelope.id, reason = "no_speech")
                 else -> onPrompt?.invoke(envelope.id, text.take(MAX_PROMPT))
             }
-        } finally {
-            pcm.delete()
-            runCatching { channels.close(channel) }
         }
+    }
+
+    /** A watch connected on the socket: introduce this phone if unpinned, and send the theme. */
+    fun onLinkOpened() {
+        val key = phoneKey() ?: return
+        if (!_state.value.pinned) sendMessage("hello", helloBody(key), sign = false)
+        currentTheme?.let { theme -> envelopeBytes("theme", theme.body(), sign = true)?.let(link::send) }
+        updateState { it.copy(line = "watch on bluetooth") }
     }
 
     private fun receiveHello(body: JSONObject) {
@@ -251,6 +289,7 @@ class OmaWatchBridge(private val context: Context) {
 
     private fun putTheme(theme: WatchTheme) {
         val bytes = envelopeBytes("theme", theme.body(), sign = true) ?: return
+        link.send(bytes)
         val request = PutDataMapRequest.create(THEME_PATH).apply {
             dataMap.putByteArray("env", bytes)
         }.asPutDataRequest().setUrgent()
@@ -266,6 +305,8 @@ class OmaWatchBridge(private val context: Context) {
         sign: Boolean,
     ) {
         val bytes = envelopeBytes(type, body, sign) ?: return
+        // The Bluetooth socket when a watch is on it (D15), else the Data Layer.
+        if (link.send(bytes)) return
         runCatching {
             Wearable.getCapabilityClient(appContext)
                 .getCapability(WATCH_CAPABILITY, CapabilityClient.FILTER_REACHABLE)
