@@ -1,12 +1,13 @@
 package dev.omalauncher.watch
 
 import android.content.Context
+import com.google.android.gms.wearable.CapabilityClient
 import com.google.android.gms.wearable.MessageEvent
+import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.security.KeyFactory
@@ -20,7 +21,11 @@ import java.util.Base64
 import java.util.LinkedHashMap
 import java.util.UUID
 
-/** The phone side of the OmaWatch v1 link. It owns no socket and sends only through Play Services. */
+/**
+ * The phone side of the OmaWatch link, protocol/phone.md in the omawatch repo. It owns no
+ * socket and sends only through Play Services. The watch picks nothing: a verified prompt
+ * runs the agent this launcher already has selected.
+ */
 class OmaWatchBridge(private val context: Context) {
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -28,38 +33,39 @@ class OmaWatchBridge(private val context: Context) {
     val state: StateFlow<WatchBridgeState> = _state.asStateFlow()
 
     /** Set by Runtime so a verified watch prompt follows the normal agent path. */
-    var onPrompt: ((ref: String, text: String, agent: String?) -> Unit)? = null
+    var onPrompt: ((ref: String, text: String) -> Unit)? = null
+
+    /** Wall clock for prompt expiry. Tests replace it. */
+    internal var now: () -> Long = System::currentTimeMillis
 
     private var keyPair: KeyPair? = null
     private var pendingWatchKey: ByteArray? = null
     private var currentTheme: WatchTheme? = readTheme()
-    private var currentAgents: List<WatchAgent> = emptyList()
-    private var currentDefaultAgent: String? = null
-    private val seenPromptIds = object : LinkedHashMap<String, Unit>(128, 0.75f, true) {
+    private val seenIds = object : LinkedHashMap<String, Unit>(128, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Unit>?): Boolean = size > 128
     }
 
-    /** Announces the phone key and retries the current theme for a newly connected watch. */
+    /** Announces the phone key, and republishes the current theme as the data item. */
     fun announce() {
         val key = keyPair() ?: run {
             updateState { it.copy(line = "phone key unavailable") }
             return
         }
-        sendEnvelope("hello", helloBody(key), sign = false)
-        currentTheme?.let { sendEnvelope("theme", it.body(), sign = true) }
-        if (currentAgents.isNotEmpty()) sendAgents(currentAgents, currentDefaultAgent)
+        sendMessage("hello", helloBody(key), sign = false)
+        currentTheme?.let(::putTheme)
     }
 
     fun publishTheme(
         name: String,
         colors: Map<String, String>,
     ) {
+        fun pick(vararg keys: String) = keys.firstNotNullOfOrNull { colors[it]?.let(::color) }
         val theme = WatchTheme(
             name = name.take(MAX_THEME_NAME),
-            bg = colors["background"] ?: colors["color0"] ?: return,
-            fg = colors["foreground"] ?: colors["color7"] ?: return,
-            accent = colors["accent"] ?: colors["color4"] ?: return,
-            muted = colors["muted"] ?: colors["color8"] ?: return,
+            bg = pick("background", "color0") ?: return,
+            fg = pick("foreground", "color7") ?: return,
+            accent = pick("accent", "color4") ?: return,
+            muted = pick("muted", "color8") ?: return,
             seq = prefs.getLong(KEY_THEME_SEQ, 0L) + 1,
         )
         currentTheme = theme
@@ -72,7 +78,7 @@ class OmaWatchBridge(private val context: Context) {
             .putString(KEY_THEME_MUTED, theme.muted)
             .apply()
         updateState { it.copy(theme = theme.name) }
-        sendEnvelope("theme", theme.body(), sign = true)
+        putTheme(theme)
     }
 
     /** Confirms the fingerprint shown by the widget and stores the exact peer key it represents. */
@@ -84,6 +90,7 @@ class OmaWatchBridge(private val context: Context) {
             .putString(KEY_PINNED_KEY, hex(raw))
             .putString(KEY_PINNED_FINGERPRINT, fingerprint)
             .putBoolean(KEY_PINNED, true)
+            .remove(KEY_PROMPT_SEQ)
             .apply()
         pendingWatchKey = null
         updateState { it.copy(line = "watch pinned", fingerprint = fingerprint, pendingFingerprint = null, pinned = true) }
@@ -93,38 +100,13 @@ class OmaWatchBridge(private val context: Context) {
 
     fun forgetWatch() {
         pendingWatchKey = null
-        prefs.edit().remove(KEY_PINNED_KEY).remove(KEY_PINNED_FINGERPRINT).apply()
+        prefs.edit().remove(KEY_PINNED_KEY).remove(KEY_PINNED_FINGERPRINT).remove(KEY_PROMPT_SEQ).apply()
         updateState { it.copy(line = "watch unpaired", fingerprint = null, pendingFingerprint = null, pinned = false) }
     }
 
-    /** Publishes the phone's provider roster so the companion can render its own app picker. */
-    fun publishAgents(agents: List<WatchAgent>, defaultAgent: String? = null) {
-        currentAgents = agents.take(MAX_WATCH_AGENTS)
-        currentDefaultAgent = defaultAgent?.takeIf { id -> currentAgents.any { it.id == id && it.available } }
-        updateState { it.copy(apps = currentAgents) }
-        sendAgents(currentAgents, currentDefaultAgent)
-    }
-
-    /** Asks a paired watch to open its microphone; speech recognition remains watch-owned. */
-    fun requestListen() {
-        if (!_state.value.pinned) {
-            updateState { it.copy(line = "watch not pinned") }
-            return
-        }
-        sendEnvelope("listen", JSONObject().put("source", "launcher"), sign = true)
-        updateState { it.copy(line = "listen requested") }
-    }
-
-    private fun sendAgents(agents: List<WatchAgent>, defaultAgent: String?) {
-        val body = JSONObject()
-            .put("default", defaultAgent ?: "")
-            .put("apps", JSONArray(agents.map { agent ->
-                JSONObject()
-                    .put("id", agent.id)
-                    .put("name", agent.name)
-                    .put("available", agent.available)
-            }))
-        sendEnvelope("agents", body, sign = true)
+    /** The installed agents, for the widget only. The watch is not sent a roster and does not choose. */
+    fun publishAgents(agents: List<WatchAgent>) {
+        updateState { it.copy(apps = agents.take(MAX_WATCH_AGENTS)) }
     }
 
     /** Widget actions: hello retries discovery, pin confirms, and unpair removes trust. */
@@ -133,7 +115,6 @@ class OmaWatchBridge(private val context: Context) {
             "hello", "connect", "retry" -> announce()
             "pin", "confirm" -> if (!pinPendingWatch()) updateState { it.copy(line = "no watch to pin") }
             "unpair", "forget" -> forgetWatch()
-            "listen", "mic" -> requestListen()
         }
     }
 
@@ -142,103 +123,132 @@ class OmaWatchBridge(private val context: Context) {
         status: String,
         ref: String,
         line: String? = null,
+        reason: String? = null,
     ) {
         val body = JSONObject()
             .put("agent", agent.take(24))
             .put("state", status)
             .put("ref", ref.take(64))
+        if (status == "failed") reason?.let { body.put("reason", it) }
         line?.takeIf { it.isNotBlank() }?.let { body.put("line", it.take(120)) }
-        sendEnvelope("status", body, sign = true)
+        sendMessage("status", body, sign = true)
     }
 
     /** Called by the WearableListenerService. */
     fun onMessage(event: MessageEvent) {
         if (event.path != BRIDGE_PATH) return
-        val envelope = runCatching { JSONObject(event.data.toString(Charsets.UTF_8)) }.getOrNull() ?: return
-        if (envelope.optInt("v", -1) != 1) return
-        val type = envelope.optString("type")
-        val id = envelope.optString("id")
-        if (id.length !in 1..64) return
-        val body = envelope.optJSONObject("body") ?: return
-        when (type) {
-            "hello" -> receiveHello(body)
-            "prompt" -> {
-                if (!verify(body, envelope.optString("sig"))) return
-                synchronized(seenPromptIds) {
-                    if (seenPromptIds.put(id, Unit) != null) return
-                }
-                val text = body.optString("text").trim().takeIf { it.isNotEmpty() } ?: return
-                val agent = body.optString("agent").trim().takeIf { it.isNotEmpty() }
-                onPrompt?.invoke(id, text, agent)
+        val envelope = parse(event.data) ?: return
+        synchronized(seenIds) {
+            if (seenIds.put(envelope.id, Unit) != null) return
+        }
+        when (envelope.type) {
+            "hello" -> receiveHello(envelope.body)
+            "prompt" -> receivePrompt(envelope)
+        }
+    }
+
+    private fun receivePrompt(envelope: Envelope) {
+        val pinned = pinnedKey() ?: return
+        if (!verify(envelope, pinned)) return
+        val body = envelope.body
+        val text = (body.opt("text") as? String)?.trim().orEmpty()
+        val seq = integer(body.opt("seq")) ?: return
+        val expires = integer(body.opt("expires")) ?: return
+        if (text.isEmpty() || text.length > MAX_PROMPT) return
+        val time = now()
+        if (time > expires || expires - time > MAX_PROMPT_AHEAD_MS) {
+            sendStatus("launcher", "failed", envelope.id, reason = "expired")
+            return
+        }
+        val fresh = synchronized(prefs) {
+            if (seq <= prefs.getLong(KEY_PROMPT_SEQ, 0L)) {
+                false
+            } else {
+                prefs.edit().putLong(KEY_PROMPT_SEQ, seq).commit()
+                true
             }
         }
+        if (!fresh) {
+            sendStatus("launcher", "failed", envelope.id, reason = "duplicate")
+            return
+        }
+        onPrompt?.invoke(envelope.id, text)
     }
 
     private fun receiveHello(body: JSONObject) {
-        val pubHex = body.optString("pubkey")
-        val suppliedFingerprint = body.optString("fingerprint")
+        val pubHex = body.opt("pubkey") as? String ?: return
+        val suppliedFingerprint = body.opt("fingerprint") as? String ?: return
         val raw = runCatching { unhex(pubHex) }.getOrNull() ?: return
         if (raw.size != ED25519_PUBLIC_BYTES || fingerprint(raw) != suppliedFingerprint) return
-        pendingWatchKey = raw
         val pinned = prefs.getString(KEY_PINNED_FINGERPRINT, null)
-        if (pinned == suppliedFingerprint) {
-            updateState { it.copy(line = "watch connected", fingerprint = suppliedFingerprint, pendingFingerprint = null, pinned = true) }
-        } else {
-            updateState { it.copy(line = "confirm watch", pendingFingerprint = suppliedFingerprint, pinned = false) }
+        if (pinned != null) {
+            // A pinned side ignores hello. The owner unpairs first to accept a new watch.
+            if (pinned == suppliedFingerprint) updateState { it.copy(line = "watch connected") }
+            return
         }
+        val first = pendingWatchKey?.contentEquals(raw) != true
+        pendingWatchKey = raw
+        updateState { it.copy(line = "confirm watch", pendingFingerprint = suppliedFingerprint, pinned = false) }
+        // Answer the first hello from a key once, so the watch can show this phone's fingerprint.
+        if (first) keyPair()?.let { sendMessage("hello", helloBody(it), sign = false) }
     }
 
-    private fun sendEnvelope(
+    private fun putTheme(theme: WatchTheme) {
+        val bytes = envelopeBytes("theme", theme.body(), sign = true) ?: return
+        val request = PutDataMapRequest.create(THEME_PATH).apply {
+            dataMap.putByteArray("env", bytes)
+        }.asPutDataRequest().setUrgent()
+        runCatching {
+            Wearable.getDataClient(appContext).putDataItem(request)
+                .addOnFailureListener { updateState { it.copy(line = "theme not published") } }
+        }.onFailure { updateState { it.copy(line = "play services unavailable") } }
+    }
+
+    private fun sendMessage(
         type: String,
         body: JSONObject,
         sign: Boolean,
     ) {
-        val canonicalBody = canonical(body)
-        val envelope = JSONObject()
-            .put("v", 1)
-            .put("type", type)
-            .put("id", UUID.randomUUID().toString().replace("-", "").take(32))
-            .put("body", JSONObject(canonicalBody))
-        if (sign) signBody(canonicalBody)?.let { envelope.put("sig", it) } ?: return
-        val bytes = envelope.toString().toByteArray(Charsets.UTF_8)
-        Wearable.getNodeClient(appContext).connectedNodes
-            .addOnSuccessListener { nodes ->
-                if (nodes.isEmpty()) {
-                    updateState { it.copy(line = "watch not connected") }
-                    return@addOnSuccessListener
-                }
-                val client = Wearable.getMessageClient(appContext)
-                nodes.forEach { node ->
-                    client.sendMessage(node.id, BRIDGE_PATH, bytes).addOnFailureListener {
-                        updateState { it.copy(line = "watch send failed") }
+        val bytes = envelopeBytes(type, body, sign) ?: return
+        runCatching {
+            Wearable.getCapabilityClient(appContext)
+                .getCapability(WATCH_CAPABILITY, CapabilityClient.FILTER_REACHABLE)
+                .addOnSuccessListener { info ->
+                    if (info.nodes.isEmpty()) {
+                        updateState { it.copy(line = "watch not connected") }
+                        return@addOnSuccessListener
+                    }
+                    val client = Wearable.getMessageClient(appContext)
+                    info.nodes.forEach { node ->
+                        client.sendMessage(node.id, BRIDGE_PATH, bytes).addOnFailureListener {
+                            updateState { it.copy(line = "watch send failed") }
+                        }
                     }
                 }
-            }
-            .addOnFailureListener { updateState { it.copy(line = "play services unavailable") } }
+                .addOnFailureListener { updateState { it.copy(line = "play services unavailable") } }
+        }.onFailure { updateState { it.copy(line = "play services unavailable") } }
     }
 
-    private fun verify(body: JSONObject, signatureHex: String): Boolean {
-        if (!_state.value.pinned || signatureHex.length != 128) return false
-        val raw = prefs.getString(KEY_PINNED_KEY, null)?.let { runCatching { unhex(it) }.getOrNull() } ?: return false
-        if (raw.size != ED25519_PUBLIC_BYTES) return false
-        return runCatching {
-            val verifier = Signature.getInstance("Ed25519")
-            val public = KeyFactory.getInstance("Ed25519").generatePublic(X509EncodedKeySpec(x509(raw)))
-            verifier.initVerify(public)
-            verifier.update(canonical(body).toByteArray(Charsets.UTF_8))
-            verifier.verify(unhex(signatureHex))
-        }.getOrDefault(false)
+    private fun envelopeBytes(type: String, body: JSONObject, sign: Boolean): ByteArray? {
+        val id = UUID.randomUUID().toString().replace("-", "")
+        val sig = if (sign) {
+            val private = keyPair()?.private ?: return null
+            runCatching {
+                val signer = Signature.getInstance("Ed25519")
+                signer.initSign(private)
+                signer.update(signedBytes(type, id, body))
+                signer.sign()
+            }.getOrNull() ?: return null
+        } else {
+            null
+        }
+        return encode(type, id, body, sig)
     }
 
-    private fun signBody(canonical: String): String? {
-        val private = keyPair()?.private ?: return null
-        return runCatching {
-            val signer = Signature.getInstance("Ed25519")
-            signer.initSign(private)
-            signer.update(canonical.toByteArray(Charsets.UTF_8))
-            hex(signer.sign())
-        }.getOrNull()
-    }
+    private fun pinnedKey(): ByteArray? =
+        prefs.getString(KEY_PINNED_KEY, null)
+            ?.let { runCatching { unhex(it) }.getOrNull() }
+            ?.takeIf { _state.value.pinned && it.size == ED25519_PUBLIC_BYTES }
 
     private fun helloBody(key: KeyPair) = JSONObject()
         .put("pubkey", hex(rawPublic(key.public.encoded)))
@@ -298,14 +308,20 @@ class OmaWatchBridge(private val context: Context) {
         _state.value = next
     }
 
+    /** One parsed message. Shape only; a signed type still has to pass [verify]. */
+    class Envelope(val type: String, val id: String, val body: JSONObject, val sig: String?)
+
     companion object {
         const val BRIDGE_PATH = "/omawatch"
+        const val THEME_PATH = "/omawatch/theme"
+        private const val WATCH_CAPABILITY = "omawatch_watch"
         private const val PREFS = "watch_bridge"
         private const val KEY_FILE = "watch-bridge-key"
         private const val KEY_LINE = "line"
         private const val KEY_PINNED = "pinned"
         private const val KEY_PINNED_KEY = "pinned_key"
         private const val KEY_PINNED_FINGERPRINT = "pinned_fingerprint"
+        private const val KEY_PROMPT_SEQ = "prompt_seq"
         private const val KEY_THEME_SEQ = "theme_seq"
         private const val KEY_THEME_NAME = "theme_name"
         private const val KEY_THEME_BG = "theme_bg"
@@ -314,7 +330,14 @@ class OmaWatchBridge(private val context: Context) {
         private const val KEY_THEME_MUTED = "theme_muted"
         private const val MAX_THEME_NAME = 40
         private const val MAX_WATCH_AGENTS = 12
+        private const val MAX_PROMPT = 500
+        private const val MAX_PROMPT_AHEAD_MS = 120_000L
+        private const val MAX_BYTES = 8 * 1024
         private const val ED25519_PUBLIC_BYTES = 32
+        private val TYPES = setOf("hello", "theme", "prompt", "status")
+        private val ID = Regex("[A-Za-z0-9_-]{1,64}")
+        private val SIG = Regex("[0-9a-f]{128}")
+        private val COLOR = Regex("#[0-9a-fA-F]{6}")
         private val ED25519_X509_PREFIX = byteArrayOf(0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00)
 
         fun rawPublic(x509: ByteArray): ByteArray = x509.takeLast(ED25519_PUBLIC_BYTES).toByteArray()
@@ -324,28 +347,95 @@ class OmaWatchBridge(private val context: Context) {
             return "SHA256:" + Base64.getEncoder().encodeToString(digest)
         }
 
-        fun canonical(obj: JSONObject): String = buildString {
-            append('{')
-            obj.keys().asSequence().toList().sorted().forEachIndexed { index, key ->
-                if (index > 0) append(',')
-                append(JSONObject.quote(key)).append(':').append(canonicalValue(obj.get(key)))
+        /** `#rrggbb`, lowercased, or null. A theme with an alpha channel or a name is not sent. */
+        internal fun color(value: String): String? = value.trim().takeIf { it.matches(COLOR) }?.lowercase()
+
+        fun parse(bytes: ByteArray): Envelope? {
+            if (bytes.size > MAX_BYTES) return null
+            val env = runCatching { JSONObject(String(bytes, Charsets.UTF_8)) }.getOrNull() ?: return null
+            if (integer(env.opt("v")) != 1L) return null
+            val type = env.opt("type") as? String ?: return null
+            val id = env.opt("id") as? String ?: return null
+            val body = env.opt("body") as? JSONObject ?: return null
+            val sig = if (env.has("sig")) env.opt("sig") as? String ?: return null else null
+            if (type !in TYPES || !id.matches(ID)) return null
+            if (sig != null && !sig.matches(SIG)) return null
+            if ((type == "hello") != (sig == null)) return null
+            return Envelope(type, id, body, sig)
+        }
+
+        fun verify(envelope: Envelope, raw: ByteArray): Boolean {
+            val sig = envelope.sig ?: return false
+            if (raw.size != ED25519_PUBLIC_BYTES) return false
+            return runCatching {
+                val verifier = Signature.getInstance("Ed25519")
+                verifier.initVerify(KeyFactory.getInstance("Ed25519").generatePublic(X509EncodedKeySpec(ED25519_X509_PREFIX + raw)))
+                verifier.update(signedBytes(envelope.type, envelope.id, envelope.body))
+                verifier.verify(unhex(sig))
+            }.getOrDefault(false)
+        }
+
+        /** What `sig` covers: the canonical form of v, type, id, and body. */
+        fun signedBytes(type: String, id: String, body: JSONObject): ByteArray =
+            canonical(JSONObject().put("v", 1).put("type", type).put("id", id).put("body", body))
+                .toByteArray(Charsets.UTF_8)
+
+        fun encode(type: String, id: String, body: JSONObject, sig: ByteArray?): ByteArray {
+            val env = JSONObject().put("v", 1).put("type", type).put("id", id).put("body", body)
+            if (sig != null) env.put("sig", hex(sig))
+            return canonical(env).toByteArray(Charsets.UTF_8)
+        }
+
+        /**
+         * The canonical form from protocol/phone.md: objects, strings, and integers only.
+         * JSONObject.toString and JSONObject.quote are not it, because they escape `/`.
+         */
+        fun canonical(value: Any?): String = buildString { canonical(value, this) }
+
+        private fun canonical(value: Any?, out: StringBuilder) {
+            when (value) {
+                is JSONObject -> {
+                    out.append('{')
+                    value.keys().asSequence().toList().sorted().forEachIndexed { i, key ->
+                        if (i > 0) out.append(',')
+                        string(key, out)
+                        out.append(':')
+                        canonical(value.get(key), out)
+                    }
+                    out.append('}')
+                }
+                is String -> string(value, out)
+                is Int, is Long -> out.append(value.toString())
+                else -> throw IllegalArgumentException("not in the canonical subset")
             }
-            append('}')
         }
 
-        private fun canonicalValue(value: Any?): String = when (value) {
-            is JSONObject -> canonical(value)
-            is JSONArray -> (0 until value.length()).joinToString(prefix = "[", postfix = "]") { canonicalValue(value.get(it)) }
-            JSONObject.NULL -> "null"
-            is Number, is Boolean -> value.toString()
-            else -> JSONObject.quote(value.toString())
+        private fun string(s: String, out: StringBuilder) {
+            out.append('"')
+            for (c in s) {
+                when (c) {
+                    '"' -> out.append("\\\"")
+                    '\\' -> out.append("\\\\")
+                    '\b' -> out.append("\\b")
+                    '\t' -> out.append("\\t")
+                    '\n' -> out.append("\\n")
+                    '\u000c' -> out.append("\\f")
+                    '\r' -> out.append("\\r")
+                    else -> if (c < ' ') out.append("\\u%04x".format(c.code)) else out.append(c)
+                }
+            }
+            out.append('"')
         }
 
-        private fun x509(raw: ByteArray) = ED25519_X509_PREFIX + raw
+        private fun integer(value: Any?): Long? = when (value) {
+            is Int -> value.toLong()
+            is Long -> value
+            else -> null
+        }
 
-        private fun hex(bytes: ByteArray) = bytes.joinToString("") { "%02x".format(it) }
+        fun hex(bytes: ByteArray) = bytes.joinToString("") { "%02x".format(it) }
 
-        private fun unhex(text: String): ByteArray {
+        fun unhex(text: String): ByteArray {
             require(text.isNotEmpty() && text.length % 2 == 0 && text.matches(Regex("[0-9a-fA-F]+")))
             return ByteArray(text.length / 2) { text.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
         }
