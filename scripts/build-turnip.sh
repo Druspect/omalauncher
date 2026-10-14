@@ -21,7 +21,10 @@ pacman -S --needed --noconfirm base-devel meson ninja python-mako python-yaml py
   glslang wayland wayland-protocols zstd expat libdrm
 
 mkdir -p "$WORK" && cd "$WORK"
-[ -f mesa-$MESA.tar.xz ] || curl -fL --retry 3 -o mesa-$MESA.tar.xz https://archive.mesa3d.org/mesa-$MESA.tar.xz
+# Two hosts of the same release files; the SHA256 below checks whichever one answered.
+for url in https://archive.mesa3d.org https://mesa.freedesktop.org/archive; do
+  [ -f mesa-$MESA.tar.xz ] || curl -fL --retry 3 --retry-all-errors -o mesa-$MESA.tar.xz $url/mesa-$MESA.tar.xz || rm -f mesa-$MESA.tar.xz
+done
 echo "$MESA_SHA256  mesa-$MESA.tar.xz" | sha256sum -c -
 [ -d mesa-$MESA ] || tar xf mesa-$MESA.tar.xz
 cd mesa-$MESA
