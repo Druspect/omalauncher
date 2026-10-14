@@ -1,7 +1,9 @@
 package dev.omalauncher.watch
 
 import android.content.Context
+import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.CapabilityClient
+import com.google.android.gms.wearable.ChannelClient
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
@@ -10,7 +12,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.bouncycastle.math.ec.rfc8032.Ed25519
 import org.json.JSONObject
+import java.io.DataInputStream
 import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
+import java.util.concurrent.TimeUnit
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
@@ -30,6 +36,9 @@ class OmaWatchBridge(private val context: Context) {
 
     /** Set by Runtime so a verified watch prompt follows the normal agent path. */
     var onPrompt: ((ref: String, text: String) -> Unit)? = null
+
+    /** Offline transcription for held-mic audio from the watch (omawatch D14). */
+    val whisper = Whisper(appContext)
 
     /** Wall clock for prompt expiry. Tests replace it. */
     internal var now: () -> Long = System::currentTimeMillis
@@ -111,6 +120,7 @@ class OmaWatchBridge(private val context: Context) {
             "hello", "connect", "retry" -> announce()
             "pin", "confirm" -> if (!pinPendingWatch()) updateState { it.copy(line = "no watch to pin") }
             "unpair", "forget" -> forgetWatch()
+            "voice", "model" -> Thread({ whisper.download() }, "whisper-model").start()
         }
     }
 
@@ -148,13 +158,22 @@ class OmaWatchBridge(private val context: Context) {
         if (!verify(envelope, pinned)) return
         val body = envelope.body
         val text = (body.opt("text") as? String)?.trim().orEmpty()
-        val seq = integer(body.opt("seq")) ?: return
-        val expires = integer(body.opt("expires")) ?: return
         if (text.isEmpty() || text.length > MAX_PROMPT) return
+        if (!accept(envelope)) return
+        onPrompt?.invoke(envelope.id, text)
+    }
+
+    /**
+     * `seq` and `expires`, shared by prompt and audio. A stale or repeated one is answered
+     * with `failed` and a reason, and nothing runs.
+     */
+    private fun accept(envelope: Envelope): Boolean {
+        val seq = integer(envelope.body.opt("seq")) ?: return false
+        val expires = integer(envelope.body.opt("expires")) ?: return false
         val time = now()
         if (time > expires || expires - time > MAX_PROMPT_AHEAD_MS) {
             sendStatus("launcher", "failed", envelope.id, reason = "expired")
-            return
+            return false
         }
         val fresh = synchronized(prefs) {
             if (seq <= prefs.getLong(KEY_PROMPT_SEQ, 0L)) {
@@ -164,11 +183,52 @@ class OmaWatchBridge(private val context: Context) {
                 true
             }
         }
-        if (!fresh) {
-            sendStatus("launcher", "failed", envelope.id, reason = "duplicate")
-            return
+        if (!fresh) sendStatus("launcher", "failed", envelope.id, reason = "duplicate")
+        return fresh
+    }
+
+    /**
+     * A held-mic channel from the watch. The PCM goes to a private temp file, the closing
+     * `audio` envelope is checked against the pinned key and the file's hash, whisper.cpp
+     * transcribes it, and the file is deleted. Runs on its own thread.
+     */
+    fun onChannelOpened(channel: ChannelClient.Channel) {
+        if (channel.path != AUDIO_PATH) return
+        Thread({ receiveAudio(channel) }, "omawatch-audio").start()
+    }
+
+    private fun receiveAudio(channel: ChannelClient.Channel) {
+        val channels = Wearable.getChannelClient(appContext)
+        val pcm = File.createTempFile("omawatch-", ".pcm", appContext.cacheDir)
+        try {
+            val stream = runCatching {
+                Tasks.await(channels.getInputStream(channel), 10, TimeUnit.SECONDS).use { input ->
+                    pcm.outputStream().buffered().use { readAudioStream(input, it) }
+                }
+            }.getOrNull() ?: return
+            val envelope = parse(stream.envelope)?.takeIf { it.type == "audio" } ?: return
+            val pinned = pinnedKey() ?: return
+            if (!verify(envelope, pinned)) return
+            val body = envelope.body
+            if (integer(body.opt("rate")) != AUDIO_RATE.toLong()) return
+            if (integer(body.opt("bytes")) != stream.bytes || body.opt("sha256") != stream.sha256) return
+            if (!accept(envelope)) return
+            if (!whisper.ready) {
+                sendStatus("launcher", "failed", envelope.id, "download the voice model in the OmaWatch widget", reason = "no_transcriber")
+                return
+            }
+            sendStatus("whisper", "running", envelope.id, "transcribing")
+            val text = runCatching { whisper.transcribe(pcm) }.getOrNull()
+            pcm.delete()
+            when {
+                text == null -> sendStatus("whisper", "failed", envelope.id, "transcription failed", reason = "no_transcriber")
+                text.isBlank() || text == "[BLANK_AUDIO]" -> sendStatus("whisper", "failed", envelope.id, reason = "no_speech")
+                else -> onPrompt?.invoke(envelope.id, text.take(MAX_PROMPT))
+            }
+        } finally {
+            pcm.delete()
+            runCatching { channels.close(channel) }
         }
-        onPrompt?.invoke(envelope.id, text)
     }
 
     private fun receiveHello(body: JSONObject) {
@@ -301,9 +361,16 @@ class OmaWatchBridge(private val context: Context) {
     /** One parsed message. Shape only; a signed type still has to pass [verify]. */
     class Envelope(val type: String, val id: String, val body: JSONObject, val sig: String?)
 
+    /** What a finished audio channel held: the closing envelope, and the PCM's size and hash. */
+    class AudioStream(val envelope: ByteArray, val bytes: Long, val sha256: String)
+
     companion object {
         const val BRIDGE_PATH = "/omawatch"
         const val THEME_PATH = "/omawatch/theme"
+        const val AUDIO_PATH = "/omawatch/audio"
+        const val AUDIO_RATE = 16000
+        const val MAX_AUDIO_BYTES = AUDIO_RATE * 2L * 60
+        private const val MAX_AUDIO_CHUNK = 65536
         private const val WATCH_CAPABILITY = "omawatch_watch"
         private const val PREFS = "watch_bridge"
         private const val KEY_FILE = "watch-bridge-seed"
@@ -324,7 +391,7 @@ class OmaWatchBridge(private val context: Context) {
         private const val MAX_PROMPT_AHEAD_MS = 120_000L
         private const val MAX_BYTES = 8 * 1024
         private const val ED25519_PUBLIC_BYTES = 32
-        private val TYPES = setOf("hello", "theme", "prompt", "status")
+        private val TYPES = setOf("hello", "theme", "prompt", "audio", "status")
         private val ID = Regex("[A-Za-z0-9_-]{1,64}")
         private val SIG = Regex("[0-9a-f]{128}")
         private val COLOR = Regex("#[0-9a-fA-F]{6}")
@@ -354,6 +421,35 @@ class OmaWatchBridge(private val context: Context) {
         }
 
         /** RFC 8032 in software, so an Android 13 phone without an Ed25519 KeyFactory still verifies. */
+        /**
+         * Reads the /omawatch/audio records: `A` PCM chunks into [pcm], then one `E` envelope.
+         * Throws on anything else, on oversize, or when the channel ends without `E`.
+         */
+        fun readAudioStream(input: InputStream, pcm: OutputStream): AudioStream {
+            val data = DataInputStream(input)
+            val sha = MessageDigest.getInstance("SHA-256")
+            var bytes = 0L
+            while (true) {
+                val kind = data.readUnsignedByte()
+                val length = data.readInt()
+                when (kind) {
+                    'A'.code -> {
+                        require(length in 1..MAX_AUDIO_CHUNK && bytes + length <= MAX_AUDIO_BYTES)
+                        val chunk = ByteArray(length).also { data.readFully(it) }
+                        pcm.write(chunk)
+                        sha.update(chunk)
+                        bytes += length
+                    }
+                    'E'.code -> {
+                        require(length in 1..MAX_BYTES)
+                        val envelope = ByteArray(length).also { data.readFully(it) }
+                        return AudioStream(envelope, bytes, hex(sha.digest()))
+                    }
+                    else -> throw IllegalArgumentException("unknown record")
+                }
+            }
+        }
+
         fun verify(envelope: Envelope, raw: ByteArray): Boolean {
             val sig = envelope.sig ?: return false
             if (raw.size != ED25519_PUBLIC_BYTES) return false

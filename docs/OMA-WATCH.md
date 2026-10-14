@@ -53,18 +53,29 @@ in a widget, log, message body, or repository.
 
 ## Hold-to-talk
 
-The microphone opens only while the watch tile is held, with the watch's
-on-device recognizer. The phone cannot open it: there is no `listen` message.
-OmaLauncher may receive a prompt while its home activity is closed; the
-listener runs the launcher bootstrap, waits for the Linux state to settle, and
-invokes `AgentStore.default` through `agentInvocation`, the prompt bar's path.
+The watch has no on-device recognizer, and no Google recognizer is used anywhere
+(omawatch D14). The watch records 16 kHz PCM only while its talk tile is held
+and streams it over a `ChannelClient` channel on `/omawatch/audio`, ending with
+a signed `audio` envelope that carries the SHA-256 of the bytes.
+
+This app writes the PCM to a private temp file, checks the envelope against the
+pinned watch key, `seq`, `expires`, the byte count, and the hash, then
+transcribes with whisper.cpp built into the app (`libomawhisper`, pinned
+v1.9.5, built at `-O3` in every variant), deletes the audio, and runs
+`AgentStore.default` with the text through `agentInvocation`. The watch sees
+`whisper running`, then the agent's `running` and `exited`.
+
+The model is `ggml-base.en.bin` (142 MB), downloaded once from the widget
+(`watch("voice")`) and checked against whisper.cpp's published SHA-1. Without
+it the reply is `failed`, `reason` `no_transcriber`. The phone cannot open the
+watch's microphone: there is no `listen` message.
 
 ## Debug and release identity
 
 Wear Data Layer delivery requires the phone and watch packages and signing
 identities to match. The watch application id is `dev.omalauncher`. Build both
 release APKs on the same machine (both fall back to its debug key) or give
-both the same owner key. A `.mod` debug build of this app does not pair.
+both the same owner key. The side-by-side `dev.omalauncher.mod` debug build pairs with a watch shell built with `-Pomawatch.applicationId=dev.omalauncher.mod`.
 
 ## Verification
 

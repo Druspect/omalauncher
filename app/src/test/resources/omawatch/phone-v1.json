@@ -112,6 +112,24 @@
       }
     },
     {
+      "name": "audio from watch",
+      "signer": "watch",
+      "signed_bytes": "{\"body\":{\"bytes\":32000,\"expires\":1792000060000,\"rate\":16000,\"seq\":4,\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"id\":\"w-audio-4\",\"type\":\"audio\",\"v\":1}",
+      "envelope": {
+        "v": 1,
+        "type": "audio",
+        "id": "w-audio-4",
+        "body": {
+          "bytes": 32000,
+          "expires": 1792000060000,
+          "rate": 16000,
+          "seq": 4,
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "sig": "3b2ddcfec2ef69d7d073a0ff9892e08f98d19441fa86a35e1be19d947b992ccfeb4dbf702272c04351fb9ceb82df864c22b56343341fd793225a411ba374f802"
+      }
+    },
+    {
       "name": "status from launcher",
       "signer": "launcher",
       "signed_bytes": "{\"body\":{\"agent\":\"claude\",\"ref\":\"w-prompt-3\",\"state\":\"running\"},\"id\":\"l-status-1\",\"type\":\"status\",\"v\":1}",
