@@ -17,7 +17,7 @@ jobs:
     # Native aarch64, like the phone, so the driver is built for and against Arch Linux ARM's libraries.
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Arch Linux ARM chroot
         run: |
@@ -51,28 +51,28 @@ jobs:
           sudo chroot "$R" /bin/bash -c 'cd /src && WORK=/work scripts/build-turnip.sh'
           cp "$R/src/app/src/main/assets/gpu/libvulkan_freedreno.so.xz" .
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: turnip
           path: libvulkan_freedreno.so.xz
 
   apk:
     needs: turnip
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: turnip
           path: app/src/main/assets/gpu
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 25
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Fetch proot
         run: |
@@ -108,7 +108,7 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk omalauncher-adreno.apk
           sha256sum omalauncher-adreno.apk app/src/main/assets/gpu/libvulkan_freedreno.so.xz | tee SHA256SUMS
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: omalauncher-adreno
           path: |
