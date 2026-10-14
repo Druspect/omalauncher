@@ -6,6 +6,7 @@ androidx-activity = "1.13.0"
 androidsvg = "1.4"
 commons-compress = "1.28.0"
 zxing = "3.5.4"
+play-services-wearable = "19.0.0"
 junit = "4.13.2"
 org-json = "20260814"
 
@@ -19,6 +20,7 @@ org-json = { module = "org.json:json", version.ref = "org-json" }
 androidsvg = { module = "com.caverock:androidsvg-aar", version.ref = "androidsvg" }
 commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commons-compress" }
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
+play-services-wearable = { module = "com.google.android.gms:play-services-wearable", version.ref = "play-services-wearable" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
