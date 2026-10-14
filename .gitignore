@@ -8,6 +8,8 @@ local.properties
 .kotlin/
 # fetched by scripts/fetch-proot.sh
 app/src/main/jniLibs/
+# built by scripts/build-turnip.sh
+app/src/main/assets/gpu/
 # fastlane
 fastlane/play-store-key.json
 fastlane/report.xml

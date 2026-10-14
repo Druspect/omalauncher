@@ -77,6 +77,15 @@ private val COMPONENTS =
             source = "https://github.com/termux/libandroid-shmem/tree/v0.7",
         ),
         Component(
+            "Mesa (Turnip)",
+            "Vulkan driver for Adreno GPUs, installed into Linux when GPU acceleration is on",
+            "mit",
+            "Copyright © 2016 Red Hat, Copyright © 2016 Bas Nieuwenhuizen, and the Mesa contributors. " +
+                "Mesa 26.2.4's Turnip, built for Android's KGSL by scripts/build-turnip.sh.",
+            "https://mesa3d.org",
+            source = "https://archive.mesa3d.org/mesa-26.2.4.tar.xz",
+        ),
+        Component(
             "Omarchy",
             "theme colors bundled for first run",
             "mit",
