@@ -8,15 +8,11 @@ import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.bouncycastle.math.ec.rfc8032.Ed25519
 import org.json.JSONObject
 import java.io.File
-import java.security.KeyFactory
-import java.security.KeyPair
-import java.security.KeyPairGenerator
 import java.security.MessageDigest
-import java.security.Signature
-import java.security.spec.PKCS8EncodedKeySpec
-import java.security.spec.X509EncodedKeySpec
+import java.security.SecureRandom
 import java.util.Base64
 import java.util.LinkedHashMap
 import java.util.UUID
@@ -38,7 +34,7 @@ class OmaWatchBridge(private val context: Context) {
     /** Wall clock for prompt expiry. Tests replace it. */
     internal var now: () -> Long = System::currentTimeMillis
 
-    private var keyPair: KeyPair? = null
+    private var phoneKey: PhoneKey? = null
     private var pendingWatchKey: ByteArray? = null
     private var currentTheme: WatchTheme? = readTheme()
     private val seenIds = object : LinkedHashMap<String, Unit>(128, 0.75f, true) {
@@ -47,7 +43,7 @@ class OmaWatchBridge(private val context: Context) {
 
     /** Announces the phone key, and republishes the current theme as the data item. */
     fun announce() {
-        val key = keyPair() ?: run {
+        val key = phoneKey() ?: run {
             updateState { it.copy(line = "phone key unavailable") }
             return
         }
@@ -190,7 +186,7 @@ class OmaWatchBridge(private val context: Context) {
         pendingWatchKey = raw
         updateState { it.copy(line = "confirm watch", pendingFingerprint = suppliedFingerprint, pinned = false) }
         // Answer the first hello from a key once, so the watch can show this phone's fingerprint.
-        if (first) keyPair()?.let { sendMessage("hello", helloBody(it), sign = false) }
+        if (first) phoneKey()?.let { sendMessage("hello", helloBody(it), sign = false) }
     }
 
     private fun putTheme(theme: WatchTheme) {
@@ -232,13 +228,8 @@ class OmaWatchBridge(private val context: Context) {
     private fun envelopeBytes(type: String, body: JSONObject, sign: Boolean): ByteArray? {
         val id = UUID.randomUUID().toString().replace("-", "")
         val sig = if (sign) {
-            val private = keyPair()?.private ?: return null
-            runCatching {
-                val signer = Signature.getInstance("Ed25519")
-                signer.initSign(private)
-                signer.update(signedBytes(type, id, body))
-                signer.sign()
-            }.getOrNull() ?: return null
+            val key = phoneKey() ?: return null
+            runCatching { key.sign(signedBytes(type, id, body)) }.getOrNull() ?: return null
         } else {
             null
         }
@@ -250,32 +241,31 @@ class OmaWatchBridge(private val context: Context) {
             ?.let { runCatching { unhex(it) }.getOrNull() }
             ?.takeIf { _state.value.pinned && it.size == ED25519_PUBLIC_BYTES }
 
-    private fun helloBody(key: KeyPair) = JSONObject()
-        .put("pubkey", hex(rawPublic(key.public.encoded)))
-        .put("fingerprint", fingerprint(rawPublic(key.public.encoded)))
+    private fun helloBody(key: PhoneKey) = JSONObject()
+        .put("pubkey", hex(key.raw))
+        .put("fingerprint", fingerprint(key.raw))
 
-    private fun keyPair(): KeyPair? {
-        keyPair?.let { return it }
+    /** An RFC 8032 key from a random seed in app-private storage. No platform Ed25519 needed. */
+    private fun phoneKey(): PhoneKey? {
+        phoneKey?.let { return it }
         val file = File(appContext.filesDir, KEY_FILE)
-        keyPair = runCatching {
-            if (file.isFile) {
-                val parts = file.readText().trim().split("\n")
-                if (parts.size == 2) {
-                    val private = Base64.getDecoder().decode(parts[0])
-                    val public = Base64.getDecoder().decode(parts[1])
-                    val privateKey = KeyFactory.getInstance("Ed25519").generatePrivate(PKCS8EncodedKeySpec(private))
-                    val publicKey = KeyFactory.getInstance("Ed25519").generatePublic(X509EncodedKeySpec(public))
-                    return@runCatching KeyPair(publicKey, privateKey)
+        phoneKey = runCatching {
+            val seed = file.takeIf { it.isFile }?.readText()?.trim()?.let(::unhex)
+                ?: ByteArray(Ed25519.SECRET_KEY_SIZE).also {
+                    SecureRandom().nextBytes(it)
+                    file.writeText(hex(it) + "\n")
                 }
-            }
-            val generated = KeyPairGenerator.getInstance("Ed25519").generateKeyPair()
-            file.writeText(
-                Base64.getEncoder().encodeToString(generated.private.encoded) + "\n" +
-                    Base64.getEncoder().encodeToString(generated.public.encoded),
-            )
-            generated
+            require(seed.size == Ed25519.SECRET_KEY_SIZE)
+            PhoneKey(seed)
         }.getOrNull()
-        return keyPair
+        return phoneKey
+    }
+
+    private class PhoneKey(private val seed: ByteArray) {
+        val raw = ByteArray(Ed25519.PUBLIC_KEY_SIZE).also { Ed25519.generatePublicKey(seed, 0, it, 0) }
+
+        fun sign(message: ByteArray) =
+            ByteArray(Ed25519.SIGNATURE_SIZE).also { Ed25519.sign(seed, 0, message, 0, message.size, it, 0) }
     }
 
     private fun readTheme(): WatchTheme? {
@@ -316,7 +306,7 @@ class OmaWatchBridge(private val context: Context) {
         const val THEME_PATH = "/omawatch/theme"
         private const val WATCH_CAPABILITY = "omawatch_watch"
         private const val PREFS = "watch_bridge"
-        private const val KEY_FILE = "watch-bridge-key"
+        private const val KEY_FILE = "watch-bridge-seed"
         private const val KEY_LINE = "line"
         private const val KEY_PINNED = "pinned"
         private const val KEY_PINNED_KEY = "pinned_key"
@@ -338,7 +328,6 @@ class OmaWatchBridge(private val context: Context) {
         private val ID = Regex("[A-Za-z0-9_-]{1,64}")
         private val SIG = Regex("[0-9a-f]{128}")
         private val COLOR = Regex("#[0-9a-fA-F]{6}")
-        private val ED25519_X509_PREFIX = byteArrayOf(0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00)
 
         fun rawPublic(x509: ByteArray): ByteArray = x509.takeLast(ED25519_PUBLIC_BYTES).toByteArray()
 
@@ -364,14 +353,13 @@ class OmaWatchBridge(private val context: Context) {
             return Envelope(type, id, body, sig)
         }
 
+        /** RFC 8032 in software, so an Android 13 phone without an Ed25519 KeyFactory still verifies. */
         fun verify(envelope: Envelope, raw: ByteArray): Boolean {
             val sig = envelope.sig ?: return false
             if (raw.size != ED25519_PUBLIC_BYTES) return false
             return runCatching {
-                val verifier = Signature.getInstance("Ed25519")
-                verifier.initVerify(KeyFactory.getInstance("Ed25519").generatePublic(X509EncodedKeySpec(ED25519_X509_PREFIX + raw)))
-                verifier.update(signedBytes(envelope.type, envelope.id, envelope.body))
-                verifier.verify(unhex(sig))
+                val message = signedBytes(envelope.type, envelope.id, envelope.body)
+                Ed25519.verify(unhex(sig), 0, raw, 0, message, 0, message.size)
             }.getOrDefault(false)
         }
 
