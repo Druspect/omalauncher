@@ -38,6 +38,7 @@ import dev.omalauncher.linux.matches
 import dev.omalauncher.linux.resolveLinuxIcon
 import dev.omalauncher.linux.run
 import dev.omalauncher.linux.shellQuote
+import dev.omalauncher.linux.agentInvocation
 import dev.omalauncher.theme.Style
 import dev.omalauncher.theme.StyleStore
 import dev.omalauncher.theme.ThemeStore
@@ -55,12 +56,14 @@ import dev.omalauncher.wayland.WaylandServer
 import dev.omalauncher.wayland.XdgToplevel
 import dev.omalauncher.widgets.Shortcut
 import dev.omalauncher.widgets.WidgetEngine
+import dev.omalauncher.watch.OmaWatchBridge
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
@@ -98,6 +101,7 @@ class Runtime(
     private val openBridge = OpenBridge(context, proot, onOpenFiles = ::openFiles, onEdit = ::edit)
     val agents = AgentStore(proot, onChanged = ::syncGuest)
     val pacman = Pacman(context, proot)
+    val watch = OmaWatchBridge(context)
     val widgets = WidgetEngine(context, proot, this)
     val updates = SystemUpdates(proot, pacman, agents)
     val gpu = Gpu(context, proot)
@@ -144,6 +148,7 @@ class Runtime(
     private var linuxJob: Job? = null
 
     init {
+        watch.onPrompt = ::handleWatchPrompt
         // Saved, so removing Linux later doesn't bring the first-run screen back.
         if (launcherReady) prefs.edit().putBoolean(SETUP_DONE, true).apply()
         themes.loadPalette()
@@ -161,6 +166,11 @@ class Runtime(
                 terminalFont.write()
                 themes.retintTerminals()
             }
+        }
+        scope.launch {
+            snapshotFlow { themes.current?.let { it.name to it.colors } }
+                .distinctUntilChanged()
+                .collect { theme -> theme?.let { watch.publishTheme(it.first, it.second) } }
         }
         androidApps.start()
         // Omarchy's Super bindings inside Linux windows; the home screen handles its own (see MainActivity).
@@ -205,6 +215,7 @@ class Runtime(
                 agents.load()
             }
             themes.load()
+            watch.announce()
             style.start()
             widgets.start()
             // On the first-run screen the download is the screen's job, with progress.
@@ -481,6 +492,7 @@ class Runtime(
         command: String?,
         name: String,
         agent: Agent? = null,
+        onExit: () -> Unit = {},
     ) {
         if (!linux) {
             openSettings(SettingsPage.Linux)
@@ -492,7 +504,31 @@ class Runtime(
         launchedNames[appId] = name
         if (agent != null) launchedAgents[appId] = agent
         val args = command?.let { " -e bash -c " + shellQuote(it) }.orEmpty()
-        launch("foot --app-id=$appId${terminalFont.optionFor(appId, command)}$args")
+        launch("foot --app-id=$appId${terminalFont.optionFor(appId, command)}$args", onExit)
+    }
+
+    /** A verified watch prompt enters the same selected-agent path as the phone prompt bar. */
+    private fun handleWatchPrompt(
+        ref: String,
+        prompt: String,
+    ) {
+        scope.launch {
+            val agent = agents.default
+            when {
+                bootstrap.state.value !is LinuxState.Installed -> {
+                    watch.sendStatus("launcher", "failed", ref, "linux not installed")
+                    return@launch
+                }
+                agent == null -> {
+                    watch.sendStatus("launcher", "failed", ref, "no agent selected")
+                    return@launch
+                }
+            }
+            watch.sendStatus(agent.name, "running", ref)
+            terminal("${agentInvocation(agent.bin, prompt)}; exec bash", agent.name, agent) {
+                watch.sendStatus(agent.name, "exited", ref)
+            }
+        }
     }
 
     /** Opens a pinned app from the home screen. A Linux one runs its current desktop entry, which an update may have changed. */

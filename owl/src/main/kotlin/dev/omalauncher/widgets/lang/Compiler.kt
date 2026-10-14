@@ -106,7 +106,7 @@ class Compiler private constructor(
                 // owl 6: properties, named Node.property; values in commands, quoted; the launcher's corner style.
                 listOf("Input.focus", "sh", "corners").associateWith { 6 } +
                 // owl 7: more of the phone, without new permissions.
-                listOf("android.alarm", "android.modes", "torch", "share", "haptic").associateWith { 7 }
+                listOf("android.alarm", "android.modes", "android.watch", "watch", "torch", "share", "haptic").associateWith { 7 }
 
         // No onLongPress: long-press belongs to the home screen, which lifts the tile to move it.
         /**
@@ -126,7 +126,7 @@ class Compiler private constructor(
         private val TRIGGER_PARAMS = mapOf("on" to listOf("value", "old"))
 
         /** Data only Android has; battery, media, notifications, volume, alarm and modes update as they change, device is fixed. */
-        val ANDROID = setOf("battery", "device", "media", "notifications", "volume", "system", "alarm", "modes")
+        val ANDROID = setOf("battery", "device", "media", "notifications", "volume", "system", "alarm", "modes", "watch")
 
         /** media("...") commands. */
         val MEDIA = setOf("toggle", "play", "pause", "next", "previous", "open")

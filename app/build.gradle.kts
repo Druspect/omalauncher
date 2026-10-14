@@ -77,6 +77,7 @@ dependencies {
     implementation(libs.commons.compress)
     implementation(libs.androidsvg)
     implementation(libs.zxing.core)
+    implementation(libs.play.services.wearable)
     implementation(project(":owl"))
     testImplementation(libs.junit)
     // android.jar only has stubs of org.json.
