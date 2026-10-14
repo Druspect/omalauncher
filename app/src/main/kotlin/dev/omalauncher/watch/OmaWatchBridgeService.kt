@@ -6,6 +6,10 @@ import com.google.android.gms.wearable.WearableListenerService
 /** Receives only the /omawatch path; trust and message validation live in OmaWatchBridge. */
 class OmaWatchBridgeService : WearableListenerService() {
     override fun onMessageReceived(event: MessageEvent) {
-        (application as? dev.omalauncher.App)?.runtime?.watch?.onMessage(event)
+        val runtime = (application as? dev.omalauncher.App)?.runtime ?: return
+        // A listener service can be the first component that starts the process. Make
+        // the normal launcher bootstrap run before a background watch prompt arrives.
+        runtime.start()
+        runtime.watch.onMessage(event)
     }
 }

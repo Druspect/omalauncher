@@ -56,6 +56,27 @@ The watch client must make these behaviors match this branch:
   be retried by the user-visible hello/status path. Do not add a socket,
   `INTERNET`, cloud speech, or a second agent selector on the watch.
 
+## Hold-to-talk path
+
+The seamless home-screen interaction is deliberately one gesture:
+
+1. The user presses and holds the watch prompt tile. The watch checks
+   `RECORD_AUDIO`, confirms `SpeechRecognizer.isOnDeviceRecognitionAvailable`,
+   and starts `createOnDeviceSpeechRecognizer`.
+2. While held, the watch shows `listening`. On release it calls
+   `stopListening`; it must send one `prompt` only when a non-empty result is
+   returned, capped at 500 characters.
+3. The watch keeps the transcript in memory, sends no audio bytes, and clears
+   the transcript after `status` `exited` or `failed` for the matching `ref`.
+4. OmaLauncher may receive that message while its home activity is not open;
+   the phone listener starts normal launcher bootstrap, waits for the Linux
+   state to settle, and invokes `AgentStore.default`. The watch must not send
+   an agent name or offer a second selector.
+
+Permission denial, missing offline model, recognizer errors, empty results,
+and no-agent/Linux-unavailable responses must be visible on the watch and must
+not fall back to network speech or silently send a partial prompt.
+
 The current watch snapshot has a trust mismatch (`pinnedFingerprint` versus
 `pinnedPubkey`) and saves theme fields without feeding them into Compose. Fix
 those before attempting an end-to-end prompt test.
