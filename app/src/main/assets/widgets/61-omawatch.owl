@@ -3,7 +3,7 @@ widget "omawatch" {
   order: 61
   size: 3x3
   minSize: 3x2
-  meta { description: "OmaWatch companion bridge with provider roster and microphone entry point"; version: "1.1"; license: "MIT"; category: "system"; owl: 7 }
+  meta { description: "OmaWatch pairing, theme, and the agent a held mic on the watch will run"; version: "1.2"; license: "MIT"; category: "system"; owl: 7 }
 
   source bridge = android.watch
 
@@ -16,18 +16,9 @@ widget "omawatch" {
       Text { text: "OmaWatch"; style: title; color: accent; weight: 1 }
       Text { text: bridge.pinned ? "paired" : bridge.pending != null ? "confirm" : "offline"; style: label; color: bridge.pinned ? green : bridge.pending != null ? yellow : muted }
     }
-    if len(bridge.apps) == 0 {
-      Text { text: "no providers yet"; style: small; color: muted; maxLines: 1 }
-    } else {
-      Flow {
-        gap: 4
-        for app in bridge.apps {
-          Text { text: app.name; style: label; color: app.available ? foreground : muted; maxLines: 1 }
-        }
-      }
-    }
+    Text { text: bridge.line; style: small; color: muted; maxLines: 2 }
     Spacer { weight: 1 }
-    Text { text: "󰍬"; font: icon; fontSize: 30; color: bridge.pinned ? accent : muted; align: center; onTap: watch("listen") }
+    Text { text: bridge.theme == null ? "theme not sent" : bridge.theme; style: label; color: foreground; maxLines: 1 }
   }
 
   screen {
@@ -40,20 +31,19 @@ widget "omawatch" {
       Text { text: bridge.pinned ? "trusted watch" : bridge.pending != null ? "new watch found — confirm below" : "no trusted watch"; color: muted }
       Text { text: bridge.fingerprint ?? bridge.pending ?? "fingerprint unavailable"; font: mono; fontSize: 11; color: foreground; maxLines: 3 }
       Text { text: bridge.theme == null ? "theme: not sent" : "theme: ${bridge.theme}"; color: foreground }
-      Text { text: "providers"; style: label; color: accent }
+      Text { text: "installed agents"; style: label; color: accent }
       Flow {
         gap: 8
         for app in bridge.apps {
-          Text { text: app.available ? "${app.name} · ready" : "${app.name} · unavailable"; color: app.available ? foreground : muted; maxLines: 1 }
+          Text { text: app.name; color: foreground; maxLines: 1 }
         }
       }
-      Text { text: "󰍬"; font: icon; fontSize: 42; color: bridge.pinned ? accent : muted; align: center; onTap: watch("listen") }
       Row {
         gap: 8
         Button { text: bridge.pending != null ? "confirm watch" : "send hello"; color: accent; onTap: watch(bridge.pending != null ? "pin" : "hello") }
         if bridge.pinned { Button { text: "unpair"; color: red; onTap: watch("unpair") } }
       }
-      Text { text: "The watch receives the launcher's four resolved theme colors. Hold-to-talk prompts are verified with the pinned watch key and run through the selected phone agent."; style: small; color: muted }
+      Text { text: "The watch receives the launcher's four resolved theme colors. Hold-to-talk starts on the watch only. A prompt is verified with the pinned watch key and runs the agent selected in the prompt bar."; style: small; color: muted }
     }
   }
 }

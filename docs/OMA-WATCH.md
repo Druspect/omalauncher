@@ -19,113 +19,56 @@ resolved theme palette and short agent status messages back to the watch.
   "listen")`.
   `61-omawatch.owl` is the built-in home-screen widget for pairing and status.
 
+## Contract
+
+The wire contract is `protocol/phone.md` in the omawatch repo. Both sides run
+its vectors: the watch in `EnvelopeTest`, this app in `OmaWatchBridgeTest`
+(`app/src/test/resources/omawatch/phone-v1.json` is a copy).
+
+- `sig` covers the canonical form of `{v, type, id, body}`. The canonical form
+  is the RFC 8785 subset for objects, strings, and integers.
+  `JSONObject.toString()` and `JSONObject.quote()` are not it: they escape `/`.
+- The latest `theme` is an urgent `DataClient` item at `/omawatch/theme`, key
+  `env`, so a watch that slept through a theme change still reads it.
+  `hello`, `prompt`, and `status` are `MessageClient` messages on `/omawatch`.
+- This app advertises `omalauncher_phone` and sends only to nodes advertising
+  `omawatch_watch`.
+- A `prompt` needs a `seq` above the last one accepted from the pinned watch
+  key and an `expires` no more than 120 s ahead. Otherwise the reply is
+  `status` `failed` with `reason` `duplicate` or `expired`, and nothing runs.
+- Without Linux or a selected agent the reply is `failed`, `reason`
+  `no_agent`. The watch does not choose the agent and is not sent a roster.
+
 ## Pairing flow
 
-1. The phone sends an unsigned `hello` containing its public key.
-2. The watch sends its unsigned `hello`.
-3. OmaLauncher shows the pending watch fingerprint in the widget.
-4. The user taps `pin`; the phone stores the watch's raw public key and its
-   matching fingerprint together.
-5. Prompts are accepted only when their Ed25519 signature verifies against that
-   stored key. Theme and status messages sent by the phone are signed with the
-   phone key.
+1. Each side sends an unsigned `hello` with its raw Ed25519 key and fingerprint.
+   A side that has not pinned the sender answers the first `hello` from a key
+   once, so neither side has to start.
+2. The widget shows the watch fingerprint; the watch shows the phone's.
+3. `pin` stores the exact key whose fingerprint was on screen. A pinned side
+   ignores `hello`; `unpair` first to accept a different watch.
 
 The private key is kept in the app-private files directory and is never placed
-in a widget, log, message body, or repository. A future hardening pass can move
-it to an Android Keystore once the minimum platform policy is settled; the
-current implementation fails closed when Ed25519 is unavailable.
+in a widget, log, message body, or repository.
 
-## OnePlus-side implementation checklist
+## Hold-to-talk
 
-The watch client must make these behaviors match this branch:
-
-- Send `hello` with `body.pubkey` as the raw 32-byte Ed25519 public key in
-  lowercase hex and `body.fingerprint` as `SHA256:` plus standard Base64 of
-  that raw key. `hello` is the only unsigned message.
-- On the phone's `hello`, retain the phone raw public key as a pending key and
-  show its fingerprint. A confirm action must store the key and fingerprint as
-  one pair; never store only the fingerprint.
-- After the watch key is pinned on the phone, send `prompt` with
-  `body.text` limited to 500 characters and sign the canonical body. The phone
-  verifies the signature before invoking the selected agent.
-- Verify the phone signature on every `theme` and `status` message. Theme
-  fields are `name`, `bg`, `fg`, `accent`, `muted`, and increasing integer
-  `seq`; status fields are `agent`, `state`, `ref`, and optional `line`.
-- Apply an accepted theme to the interactive shell palette. Keep the WFF
-  ambient face static; the phone bridge cannot make a resource-only face
-  dynamically recolor.
-- Use `MessageClient` on `/omawatch`; prompts/status are best effort and must
-  be retried by the user-visible hello/status path. Do not add a socket,
-  `INTERNET`, cloud speech, or a second agent selector on the watch.
-
-## Hold-to-talk path
-
-The seamless home-screen interaction is deliberately one gesture:
-
-1. The user presses and holds the watch prompt tile. The watch checks
-   `RECORD_AUDIO`, confirms `SpeechRecognizer.isOnDeviceRecognitionAvailable`,
-   and starts `createOnDeviceSpeechRecognizer`.
-2. While held, the watch shows `listening`. On release it calls
-   `stopListening`; it must send one `prompt` only when a non-empty result is
-   returned, capped at 500 characters.
-3. The watch keeps the transcript in memory, sends no audio bytes, and clears
-   the transcript after `status` `exited` or `failed` for the matching `ref`.
-4. OmaLauncher may receive that message while its home activity is not open;
-   the phone listener starts normal launcher bootstrap, waits for the Linux
-   state to settle, and invokes the selected provider or `AgentStore.default`.
-   The watch may send only a published provider id; it must not send an
-   arbitrary agent name or expose a second, phone-specific selector.
-
-Permission denial, missing offline model, recognizer errors, empty results,
-and no-agent/Linux-unavailable responses must be visible on the watch and must
-not fall back to network speech or silently send a partial prompt.
-
-The current watch snapshot has a trust mismatch (`pinnedFingerprint` versus
-`pinnedPubkey`) and saves theme fields without feeding them into Compose. Fix
-those before attempting an end-to-end prompt test.
-
-## Companion identity and provider roster
-
-OmaWatch is a distinct companion experience. OmaLauncher only publishes the
-bridge state and exposes a small `OmaWatch` home tile; the watch owns its
-provider picker, microphone gesture, speech recognition, and conversation UX.
-
-The phone sends a signed `agents` message:
-
-```json
-{
-  "default": "claude",
-  "apps": [
-    {"id": "claude", "name": "Claude", "available": true},
-    {"id": "chatgpt", "name": "ChatGPT", "available": true},
-    {"id": "grok", "name": "Grok", "available": false}
-  ]
-}
-```
-
-`chatgpt` is backed by the installed `codex` CLI on the phone. The watch must
-show unavailable providers as disabled, and send the selected `id` in the
-signed prompt body. A prompt without `agent` uses the phone's configured
-default. The phone accepts only an installed provider whose published id
-matches; it never turns a watch-provided string into a shell command.
-
-The launcher tile's microphone glyph sends a signed `listen` message to the
-paired watch. This is only a wake/request signal: the watch still performs
-on-device speech recognition and sends text back as a signed `prompt`.
+The microphone opens only while the watch tile is held, with the watch's
+on-device recognizer. The phone cannot open it: there is no `listen` message.
+OmaLauncher may receive a prompt while its home activity is closed; the
+listener runs the launcher bootstrap, waits for the Linux state to settle, and
+invokes `AgentStore.default` through `agentInvocation`, the prompt bar's path.
 
 ## Debug and release identity
 
 Wear Data Layer delivery requires the phone and watch packages and signing
-identities to match. The watch application id must therefore remain
-`dev.omalauncher`, and an APK signed with a different debug key will not pair
-with a release OmaLauncher install. For device testing, install both debug
-artifacts signed by the same key, or test both release-signed artifacts.
+identities to match. The watch application id is `dev.omalauncher`. Build both
+release APKs on the same machine (both fall back to its debug key) or give
+both the same owner key. A `.mod` debug build of this app does not pair.
 
 ## Verification
 
 ```sh
-ANDROID_HOME=/Users/fuller_m/Library/Android/sdk \
-  ./gradlew :owl:test :app:testDebugUnitTest --offline --console=plain
+ANDROID_HOME=$HOME/Library/Android/sdk \
+  ./gradlew :owl:test :app:testDebugUnitTest --console=plain
 ```
-
-The branch also checks the bundled bridge widget through the OWL compiler test.

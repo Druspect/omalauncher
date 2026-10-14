@@ -493,21 +493,15 @@ class Runtime(
     private fun handleWatchPrompt(
         ref: String,
         prompt: String,
-        requestedAgent: String?,
     ) {
         scope.launch {
             val state = bootstrap.state.first { it !is LinuxState.Checking }
-            val agent = requestedAgent?.let(::agentForWatch) ?: agents.default
-            when {
-                state !is LinuxState.Installed -> {
-                    watch.sendStatus("launcher", "failed", ref, "linux not installed")
-                    return@launch
-                }
-                agent == null -> {
-                    val line = requestedAgent?.let { "agent unavailable: $it" } ?: "no agent selected"
-                    watch.sendStatus("launcher", "failed", ref, line)
-                    return@launch
-                }
+            // The watch does not choose: the agent is the one this launcher already has selected.
+            val agent = agents.default
+            if (state !is LinuxState.Installed || agent == null) {
+                val line = if (state !is LinuxState.Installed) "linux not installed" else "no agent selected"
+                watch.sendStatus("launcher", "failed", ref, line, reason = "no_agent")
+                return@launch
             }
             watch.sendStatus(agent.name, "running", ref)
             terminal("${agentInvocation(agent.bin, prompt)}; exec bash", agent.name, agent) {
@@ -516,34 +510,9 @@ class Runtime(
         }
     }
 
-    /** Watch ids stay stable even when the local CLI has a product-specific name. */
-    private fun watchAgentId(agent: Agent): String = when (agent.bin) {
-        "codex" -> "chatgpt"
-        else -> agent.bin
-    }
-
-    private fun watchAgentName(agent: Agent): String = when (agent.bin) {
-        "codex" -> "ChatGPT"
-        else -> agent.name.removeSuffix(" Code")
-    }
-
-    private fun agentForWatch(id: String): Agent? {
-        val requested = id.trim().lowercase()
-        return agents.installed.firstOrNull { it.bin == requested || watchAgentId(it) == requested }
-    }
-
+    /** The widget lists installed agents. The watch is not sent this list. */
     private fun publishWatchAgents() {
-        val installed = agents.installed
-        val coreIds = listOf("claude", "chatgpt", "grok")
-        val core = coreIds
-            .map { id ->
-                val agent = installed.firstOrNull { watchAgentId(it) == id }
-                WatchAgent(id, agent?.let(::watchAgentName) ?: id.replaceFirstChar(Char::uppercase), agent != null)
-            }
-        val extras = installed
-            .filterNot { watchAgentId(it) in coreIds }
-            .map { WatchAgent(watchAgentId(it), watchAgentName(it), true) }
-        watch.publishAgents(core + extras, agents.default?.let(::watchAgentId))
+        watch.publishAgents(agents.installed.map { WatchAgent(it.bin, it.name, true) })
     }
 
     /** Opens a pinned app from the home screen. A Linux one runs its current desktop entry, which an update may have changed. */
