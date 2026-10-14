@@ -49,16 +49,25 @@ drawing.
 ## GPU acceleration
 
 Opt-in, in settings › linux, on Mali GPUs (v10+: Pixel 7 and newer, recent
-MediaTek). Turning it on installs Mesa and the Vulkan loader with pacman and
-the pinned PanVK-kbase driver (a Mesa Vulkan driver for Android's
-`/dev/mali0`, from zenithblue-oss/panvk-kbase-android, checked against its
-sha256) into `/usr/local`, where pacman never touches it. OpenGL is Arch's
-stock Mesa on top of it, via zink. Frames still arrive as wl_shm buffers
+MediaTek) and Adreno GPUs (Snapdragon). Turning it on installs Mesa and the
+Vulkan loader with pacman and a Mesa Vulkan driver for the phone's GPU into
+`/usr/local`, where pacman never touches it:
+
+- Mali: the pinned PanVK-kbase driver for Android's `/dev/mali0`, downloaded
+  from zenithblue-oss/panvk-kbase-android and checked against its sha256.
+- Adreno: Turnip built for KGSL, Android's `/dev/kgsl-3d0` (Arch's
+  vulkan-freedreno only supports the desktop msm driver). It ships in the APK
+  (`assets/gpu/libvulkan_freedreno.so.xz`, not in git) and is reinstalled from
+  it when the app updates. `scripts/build-turnip.sh` builds it from Mesa's
+  source on aarch64 Arch Linux ARM, in the launcher's own guest, so it links
+  against the same libraries the guest has.
+
+OpenGL is Arch's stock Mesa on top of either, via zink. Frames still arrive as wl_shm buffers
 (`MESA_VK_WSI_DEBUG=sw`), so the compositor is the same either way.
 
 `linux/Gpu.kt` only switches guest apps to the GPU (`Proot.graphicsEnv`)
-after a check passes (vulkaninfo finds PanVK, eglinfo gets zink), and checks
-again after every system update; if that fails, apps render in software
+after a check passes (vulkaninfo finds PanVK or Turnip, eglinfo gets zink),
+and checks again after every system or app update; if that fails, apps render in software
 (llvmpipe) and settings offers a retry. One app can opt out with
 `GALLIUM_DRIVER=llvmpipe app`. Terminal apps (foot) draw on the CPU and
 don't change.
