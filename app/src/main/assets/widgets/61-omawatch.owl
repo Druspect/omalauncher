@@ -34,7 +34,7 @@ widget "omawatch" {
       Text { text: bridge.theme == null ? "theme: not sent" : "theme: ${bridge.theme}"; color: foreground }
       Text { text: "voice model: ${bridge.voice}"; color: bridge.voice == "ready" ? green : foreground }
       if bridge.voice != "ready" {
-        Button { text: "download voice model (142 MB)"; color: accent; onTap: watch("voice") }
+        Button { text: "download voice model (Whisper large-v3)"; color: accent; onTap: watch("voice") }
       }
       Text { text: "installed agents"; style: label; color: accent }
       Flow {
