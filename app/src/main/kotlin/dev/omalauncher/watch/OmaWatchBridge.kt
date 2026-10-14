@@ -28,11 +28,13 @@ class OmaWatchBridge(private val context: Context) {
     val state: StateFlow<WatchBridgeState> = _state.asStateFlow()
 
     /** Set by Runtime so a verified watch prompt follows the normal agent path. */
-    var onPrompt: ((ref: String, text: String) -> Unit)? = null
+    var onPrompt: ((ref: String, text: String, agent: String?) -> Unit)? = null
 
     private var keyPair: KeyPair? = null
     private var pendingWatchKey: ByteArray? = null
     private var currentTheme: WatchTheme? = readTheme()
+    private var currentAgents: List<WatchAgent> = emptyList()
+    private var currentDefaultAgent: String? = null
     private val seenPromptIds = object : LinkedHashMap<String, Unit>(128, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Unit>?): Boolean = size > 128
     }
@@ -45,6 +47,7 @@ class OmaWatchBridge(private val context: Context) {
         }
         sendEnvelope("hello", helloBody(key), sign = false)
         currentTheme?.let { sendEnvelope("theme", it.body(), sign = true) }
+        if (currentAgents.isNotEmpty()) sendAgents(currentAgents, currentDefaultAgent)
     }
 
     fun publishTheme(
@@ -94,12 +97,43 @@ class OmaWatchBridge(private val context: Context) {
         updateState { it.copy(line = "watch unpaired", fingerprint = null, pendingFingerprint = null, pinned = false) }
     }
 
+    /** Publishes the phone's provider roster so the companion can render its own app picker. */
+    fun publishAgents(agents: List<WatchAgent>, defaultAgent: String? = null) {
+        currentAgents = agents.take(MAX_WATCH_AGENTS)
+        currentDefaultAgent = defaultAgent?.takeIf { id -> currentAgents.any { it.id == id && it.available } }
+        updateState { it.copy(apps = currentAgents) }
+        sendAgents(currentAgents, currentDefaultAgent)
+    }
+
+    /** Asks a paired watch to open its microphone; speech recognition remains watch-owned. */
+    fun requestListen() {
+        if (!_state.value.pinned) {
+            updateState { it.copy(line = "watch not pinned") }
+            return
+        }
+        sendEnvelope("listen", JSONObject().put("source", "launcher"), sign = true)
+        updateState { it.copy(line = "listen requested") }
+    }
+
+    private fun sendAgents(agents: List<WatchAgent>, defaultAgent: String?) {
+        val body = JSONObject()
+            .put("default", defaultAgent ?: "")
+            .put("apps", JSONArray(agents.map { agent ->
+                JSONObject()
+                    .put("id", agent.id)
+                    .put("name", agent.name)
+                    .put("available", agent.available)
+            }))
+        sendEnvelope("agents", body, sign = true)
+    }
+
     /** Widget actions: hello retries discovery, pin confirms, and unpair removes trust. */
     fun action(action: String) {
         when (action.lowercase()) {
             "hello", "connect", "retry" -> announce()
             "pin", "confirm" -> if (!pinPendingWatch()) updateState { it.copy(line = "no watch to pin") }
             "unpair", "forget" -> forgetWatch()
+            "listen", "mic" -> requestListen()
         }
     }
 
@@ -134,7 +168,8 @@ class OmaWatchBridge(private val context: Context) {
                     if (seenPromptIds.put(id, Unit) != null) return
                 }
                 val text = body.optString("text").trim().takeIf { it.isNotEmpty() } ?: return
-                onPrompt?.invoke(id, text)
+                val agent = body.optString("agent").trim().takeIf { it.isNotEmpty() }
+                onPrompt?.invoke(id, text, agent)
             }
         }
     }
@@ -251,6 +286,7 @@ class OmaWatchBridge(private val context: Context) {
         pendingFingerprint = null,
         pinned = prefs.getBoolean(KEY_PINNED, false) && prefs.contains(KEY_PINNED_KEY),
         theme = prefs.getString(KEY_THEME_NAME, null),
+        apps = emptyList(),
     )
 
     private fun updateState(change: (WatchBridgeState) -> WatchBridgeState) {
@@ -277,6 +313,7 @@ class OmaWatchBridge(private val context: Context) {
         private const val KEY_THEME_ACCENT = "theme_accent"
         private const val KEY_THEME_MUTED = "theme_muted"
         private const val MAX_THEME_NAME = 40
+        private const val MAX_WATCH_AGENTS = 12
         private const val ED25519_PUBLIC_BYTES = 32
         private val ED25519_X509_PREFIX = byteArrayOf(0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00)
 
@@ -321,6 +358,13 @@ data class WatchBridgeState(
     val pendingFingerprint: String?,
     val pinned: Boolean,
     val theme: String?,
+    val apps: List<WatchAgent>,
+)
+
+data class WatchAgent(
+    val id: String,
+    val name: String,
+    val available: Boolean,
 )
 
 data class WatchTheme(

@@ -57,6 +57,7 @@ import dev.omalauncher.wayland.XdgToplevel
 import dev.omalauncher.widgets.Shortcut
 import dev.omalauncher.widgets.WidgetEngine
 import dev.omalauncher.watch.OmaWatchBridge
+import dev.omalauncher.watch.WatchAgent
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -103,6 +104,8 @@ class Runtime(
     val agents = AgentStore(proot, onChanged = ::syncGuest)
     val pacman = Pacman(context, proot)
     val watch = OmaWatchBridge(context)
+    val agents = AgentStore(proot, onChanged = { syncGuest(); publishWatchAgents() })
+    val pacman = Pacman(context, proot)
     val widgets = WidgetEngine(context, proot, this)
     val updates = SystemUpdates(proot, pacman, agents)
     val gpu = Gpu(context, proot)
@@ -215,6 +218,7 @@ class Runtime(
                 launcherFiles.sync()
                 agents.load()
             }
+            publishWatchAgents()
             themes.load()
             watch.announce()
             style.start()
@@ -272,6 +276,7 @@ class Runtime(
                     updates.forget()
                     agents.load()
                 }
+                publishWatchAgents()
                 gpu.turnOff()
                 linuxApps.clear()
                 linuxIcons.clear()
@@ -330,6 +335,7 @@ class Runtime(
             synchronized(server) { server.input.setKeymap(proot.keymap.path) }
             agents.load()
         }
+        publishWatchAgents()
         widgets.linuxChanged(true)
         refreshApps()
         withContext(Dispatchers.IO) { updates.load() }
@@ -512,17 +518,19 @@ class Runtime(
     private fun handleWatchPrompt(
         ref: String,
         prompt: String,
+        requestedAgent: String?,
     ) {
         scope.launch {
             val state = bootstrap.state.first { it !is LinuxState.Checking }
-            val agent = agents.default
+            val agent = requestedAgent?.let(::agentForWatch) ?: agents.default
             when {
                 state !is LinuxState.Installed -> {
                     watch.sendStatus("launcher", "failed", ref, "linux not installed")
                     return@launch
                 }
                 agent == null -> {
-                    watch.sendStatus("launcher", "failed", ref, "no agent selected")
+                    val line = requestedAgent?.let { "agent unavailable: $it" } ?: "no agent selected"
+                    watch.sendStatus("launcher", "failed", ref, line)
                     return@launch
                 }
             }
@@ -531,6 +539,36 @@ class Runtime(
                 watch.sendStatus(agent.name, "exited", ref)
             }
         }
+    }
+
+    /** Watch ids stay stable even when the local CLI has a product-specific name. */
+    private fun watchAgentId(agent: Agent): String = when (agent.bin) {
+        "codex" -> "chatgpt"
+        else -> agent.bin
+    }
+
+    private fun watchAgentName(agent: Agent): String = when (agent.bin) {
+        "codex" -> "ChatGPT"
+        else -> agent.name.removeSuffix(" Code")
+    }
+
+    private fun agentForWatch(id: String): Agent? {
+        val requested = id.trim().lowercase()
+        return agents.installed.firstOrNull { it.bin == requested || watchAgentId(it) == requested }
+    }
+
+    private fun publishWatchAgents() {
+        val installed = agents.installed
+        val coreIds = listOf("claude", "chatgpt", "grok")
+        val core = coreIds
+            .map { id ->
+                val agent = installed.firstOrNull { watchAgentId(it) == id }
+                WatchAgent(id, agent?.let(::watchAgentName) ?: id.replaceFirstChar(Char::uppercase), agent != null)
+            }
+        val extras = installed
+            .filterNot { watchAgentId(it) in coreIds }
+            .map { WatchAgent(watchAgentId(it), watchAgentName(it), true) }
+        watch.publishAgents(core + extras, agents.default?.let(::watchAgentId))
     }
 
     /** Opens a pinned app from the home screen. A Linux one runs its current desktop entry, which an update may have changed. */

@@ -42,6 +42,7 @@ import dev.omalauncher.widgets.lang.Str
 import dev.omalauncher.widgets.lang.Value
 import dev.omalauncher.widgets.lang.WidgetError
 import dev.omalauncher.widgets.lang.bool
+import dev.omalauncher.widgets.lang.Lst
 import dev.omalauncher.androidAppKey
 import dev.omalauncher.ui.LauncherStyle
 import dev.omalauncher.widgets.runtime.Alarm
@@ -178,6 +179,15 @@ class WidgetServices(
                 "pending" to (state.pendingFingerprint?.let(::Str) ?: Null),
                 "pinned" to bool(state.pinned),
                 "theme" to (state.theme?.let(::Str) ?: Null),
+                "apps" to Lst(state.apps.map { app ->
+                    Obj(
+                        mapOf(
+                            "id" to Str(app.id),
+                            "name" to Str(app.name),
+                            "available" to bool(app.available),
+                        ),
+                    )
+                }),
             ),
         )
 
