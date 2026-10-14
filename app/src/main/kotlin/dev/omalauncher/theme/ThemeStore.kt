@@ -504,6 +504,20 @@ class ThemeStore(
     }
 
     /**
+     * Deletes one of the user's extra backgrounds, from the phone and Linux.
+     * If it was showing, the theme's first takes its place, as on Omarchy
+     * when the picked background is gone.
+     */
+    suspend fun removeBackground(file: File) {
+        val theme = current ?: return
+        if (!theme.isExtraBackground(file)) return
+        withContext(Dispatchers.IO) { file.delete() }
+        if (file != background) return
+        style.update { it.with(Style.BACKGROUND, null) }
+        showBackground(theme.backgrounds().firstOrNull())
+    }
+
+    /**
      * Guest configs for Omarchy's apps, in the current theme's colors. Before
      * [load] ran, the saved theme's: leaving them out would count as removing them.
      */

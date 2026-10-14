@@ -57,6 +57,9 @@ class OmarchyTheme(
         return images(extraBackgrounds) + merged.values.sortedBy { it.name }
     }
 
+    /** Whether [file] is one of the user's extra backgrounds, which they may remove; the theme's own stay. */
+    fun isExtraBackground(file: File) = extraBackgrounds != null && file.parentFile == extraBackgrounds
+
     /**
      * The files Linux gets in ~/.local/state/omarchy/current/theme, by name:
      * each directory's top-level files over the last one's, without the
