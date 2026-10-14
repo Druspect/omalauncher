@@ -64,6 +64,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
@@ -513,9 +514,10 @@ class Runtime(
         prompt: String,
     ) {
         scope.launch {
+            val state = bootstrap.state.first { it !is LinuxState.Checking }
             val agent = agents.default
             when {
-                bootstrap.state.value !is LinuxState.Installed -> {
+                state !is LinuxState.Installed -> {
                     watch.sendStatus("launcher", "failed", ref, "linux not installed")
                     return@launch
                 }

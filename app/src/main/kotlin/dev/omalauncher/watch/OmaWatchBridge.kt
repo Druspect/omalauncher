@@ -17,6 +17,7 @@ import java.security.Signature
 import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.X509EncodedKeySpec
 import java.util.Base64
+import java.util.LinkedHashMap
 import java.util.UUID
 
 /** The phone side of the OmaWatch v1 link. It owns no socket and sends only through Play Services. */
@@ -32,6 +33,9 @@ class OmaWatchBridge(private val context: Context) {
     private var keyPair: KeyPair? = null
     private var pendingWatchKey: ByteArray? = null
     private var currentTheme: WatchTheme? = readTheme()
+    private val seenPromptIds = object : LinkedHashMap<String, Unit>(128, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Unit>?): Boolean = size > 128
+    }
 
     /** Announces the phone key and retries the current theme for a newly connected watch. */
     fun announce() {
@@ -120,11 +124,15 @@ class OmaWatchBridge(private val context: Context) {
         if (envelope.optInt("v", -1) != 1) return
         val type = envelope.optString("type")
         val id = envelope.optString("id")
+        if (id.length !in 1..64) return
         val body = envelope.optJSONObject("body") ?: return
         when (type) {
             "hello" -> receiveHello(body)
             "prompt" -> {
                 if (!verify(body, envelope.optString("sig"))) return
+                synchronized(seenPromptIds) {
+                    if (seenPromptIds.put(id, Unit) != null) return
+                }
                 val text = body.optString("text").trim().takeIf { it.isNotEmpty() } ?: return
                 onPrompt?.invoke(id, text)
             }
