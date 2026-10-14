@@ -33,6 +33,7 @@ widget "omawatch" {
       Text { text: bridge.fingerprint ?? bridge.pending ?? "fingerprint unavailable"; font: mono; fontSize: 11; color: foreground; maxLines: 3 }
       Text { text: bridge.theme == null ? "theme: not sent" : "theme: ${bridge.theme}"; color: foreground }
       Text { text: "voice model: ${bridge.voice}"; color: bridge.voice == "ready" ? green : foreground }
+      Button { text: "bluetooth link"; color: accent; onTap: watch("bluetooth") }
       if bridge.voice != "ready" {
         Button { text: "download voice model (Whisper large-v3)"; color: accent; onTap: watch("voice") }
       }
