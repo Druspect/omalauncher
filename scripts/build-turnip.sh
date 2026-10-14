@@ -20,7 +20,7 @@ WORK="${WORK:-$(mktemp -d)}"
 pacman -S --needed --noconfirm base-devel meson ninja python-mako python-yaml python-packaging \
   glslang wayland wayland-protocols zstd expat libdrm
 
-cd "$WORK"
+mkdir -p "$WORK" && cd "$WORK"
 [ -f mesa-$MESA.tar.xz ] || curl -fL --retry 3 -o mesa-$MESA.tar.xz https://archive.mesa3d.org/mesa-$MESA.tar.xz
 echo "$MESA_SHA256  mesa-$MESA.tar.xz" | sha256sum -c -
 [ -d mesa-$MESA ] || tar xf mesa-$MESA.tar.xz

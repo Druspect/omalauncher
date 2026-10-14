@@ -30,7 +30,7 @@ jobs:
           gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys 68B3537F39A313B3E574D06777193F152BDBE6A6
           gpg --verify alarm.tar.gz.sig alarm.tar.gz
           R="$RUNNER_TEMP/alarm"
-          mkdir "$R" && sudo bsdtar -xpf alarm.tar.gz -C "$R" && rm alarm.tar.gz
+          sudo mkdir "$R" && sudo bsdtar -xpf alarm.tar.gz -C "$R" && rm alarm.tar.gz
           # pacman checks free space on a mount point.
           sudo mount --bind "$R" "$R"
           sudo mount -t proc proc "$R/proc"
