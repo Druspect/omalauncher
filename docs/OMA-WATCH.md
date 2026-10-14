@@ -11,10 +11,12 @@ resolved theme palette and short agent status messages back to the watch.
   pairing state, message canonicalization, and theme/status envelopes.
 - `OmaWatchBridgeService` is the exported Play Services listener. It does no
   work besides handing an event to the application bridge.
-- `Runtime` connects a verified prompt to `AgentStore.default` and
+- `Runtime` connects a verified prompt to the requested provider, or
+  `AgentStore.default` when no provider is requested, and
   `Runtime.terminal`; Linux-unavailable and no-agent cases return a signed
   `failed` status.
-- OWL exposes `android.watch` and `watch("hello" | "pin" | "unpair")`.
+- OWL exposes `android.watch` and `watch("hello" | "pin" | "unpair" |
+  "listen")`.
   `61-omawatch.owl` is the built-in home-screen widget for pairing and status.
 
 ## Pairing flow
@@ -70,8 +72,9 @@ The seamless home-screen interaction is deliberately one gesture:
    the transcript after `status` `exited` or `failed` for the matching `ref`.
 4. OmaLauncher may receive that message while its home activity is not open;
    the phone listener starts normal launcher bootstrap, waits for the Linux
-   state to settle, and invokes `AgentStore.default`. The watch must not send
-   an agent name or offer a second selector.
+   state to settle, and invokes the selected provider or `AgentStore.default`.
+   The watch may send only a published provider id; it must not send an
+   arbitrary agent name or expose a second, phone-specific selector.
 
 Permission denial, missing offline model, recognizer errors, empty results,
 and no-agent/Linux-unavailable responses must be visible on the watch and must
@@ -80,6 +83,35 @@ not fall back to network speech or silently send a partial prompt.
 The current watch snapshot has a trust mismatch (`pinnedFingerprint` versus
 `pinnedPubkey`) and saves theme fields without feeding them into Compose. Fix
 those before attempting an end-to-end prompt test.
+
+## Companion identity and provider roster
+
+OmaWatch is a distinct companion experience. OmaLauncher only publishes the
+bridge state and exposes a small `OmaWatch` home tile; the watch owns its
+provider picker, microphone gesture, speech recognition, and conversation UX.
+
+The phone sends a signed `agents` message:
+
+```json
+{
+  "default": "claude",
+  "apps": [
+    {"id": "claude", "name": "Claude", "available": true},
+    {"id": "chatgpt", "name": "ChatGPT", "available": true},
+    {"id": "grok", "name": "Grok", "available": false}
+  ]
+}
+```
+
+`chatgpt` is backed by the installed `codex` CLI on the phone. The watch must
+show unavailable providers as disabled, and send the selected `id` in the
+signed prompt body. A prompt without `agent` uses the phone's configured
+default. The phone accepts only an installed provider whose published id
+matches; it never turns a watch-provided string into a shell command.
+
+The launcher tile's microphone glyph sends a signed `listen` message to the
+paired watch. This is only a wake/request signal: the watch still performs
+on-device speech recognition and sends text back as a signed `prompt`.
 
 ## Debug and release identity
 
