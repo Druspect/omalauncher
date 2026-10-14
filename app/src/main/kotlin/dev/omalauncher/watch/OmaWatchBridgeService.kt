@@ -1,5 +1,6 @@
 package dev.omalauncher.watch
 
+import com.google.android.gms.wearable.ChannelClient
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.WearableListenerService
 
@@ -11,5 +12,12 @@ class OmaWatchBridgeService : WearableListenerService() {
         // the normal launcher bootstrap run before a background watch prompt arrives.
         runtime.start()
         runtime.watch.onMessage(event)
+    }
+
+    /** A held-mic audio channel from the watch (omawatch D14). */
+    override fun onChannelOpened(channel: ChannelClient.Channel) {
+        val runtime = (application as? dev.omalauncher.App)?.runtime ?: return
+        runtime.start()
+        runtime.watch.onChannelOpened(channel)
     }
 }

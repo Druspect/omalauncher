@@ -62,6 +62,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -147,7 +148,7 @@ class WidgetServices(
             "volume" -> volume.updates()
             "alarm" -> alarm.updates()
             "modes" -> modes.updates()
-            "watch" -> runtime.watch.state.map(::watchValue).distinctUntilChanged()
+            "watch" -> combine(runtime.watch.state, runtime.watch.whisper.state, ::watchValue).distinctUntilChanged()
             "battery" ->
                 callbackFlow {
                     val receiver =
@@ -169,9 +170,9 @@ class WidgetServices(
 
     override fun androidImage(src: String) = media.art(src)
 
-    private fun watch(): Value = watchValue(runtime.watch.state.value)
+    private fun watch(): Value = watchValue(runtime.watch.state.value, runtime.watch.whisper.state.value)
 
-    private fun watchValue(state: dev.omalauncher.watch.WatchBridgeState): Value =
+    private fun watchValue(state: dev.omalauncher.watch.WatchBridgeState, voice: String): Value =
         Obj(
             mapOf(
                 "line" to Str(state.line),
@@ -179,6 +180,7 @@ class WidgetServices(
                 "pending" to (state.pendingFingerprint?.let(::Str) ?: Null),
                 "pinned" to bool(state.pinned),
                 "theme" to (state.theme?.let(::Str) ?: Null),
+                "voice" to Str(voice),
                 "apps" to Lst(state.apps.map { app ->
                     Obj(
                         mapOf(
