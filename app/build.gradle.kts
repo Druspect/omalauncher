@@ -22,6 +22,8 @@ android {
         ndk { abiFilters += "arm64-v8a" }
         // A test build that installs next to the store app: -PapplicationIdSuffix=.adreno -PappLabel="Omalauncher Adreno"
         providers.gradleProperty("applicationIdSuffix").orNull?.let { applicationIdSuffix = it }
+        // Which build this is, in settings and fetch: -PversionSuffix=-adreno-glass+1a2b3c4
+        providers.gradleProperty("versionSuffix").orNull?.let { versionNameSuffix = it }
         manifestPlaceholders["appLabel"] = providers.gradleProperty("appLabel").getOrElse("Omalauncher")
     }
 

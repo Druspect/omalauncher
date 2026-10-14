@@ -6,7 +6,9 @@ name: adreno-apk
 # updates the last one; without them it's debug-signed and has to be uninstalled before the next.
 on:
   push:
-    branches: [adreno-gpu]
+    branches: [adreno-gpu, adreno-glass]
+  pull_request:
+    branches: [adreno-glass]
   workflow_dispatch:
 
 permissions:
@@ -105,7 +107,8 @@ jobs:
           # Without the driver's sha256, turning the GPU on would fail on the phone.
           test -s app/src/main/assets/gpu/libvulkan_freedreno.so.xz.sha256
           ./gradlew :app:testDebugUnitTest --tests 'dev.omalauncher.linux.GpuTest' \
-            :app:assembleRelease -PapplicationIdSuffix=.adreno -PappLabel="Omalauncher Adreno"
+            :app:assembleRelease -PapplicationIdSuffix=.adreno -PappLabel="Omalauncher Adreno" \
+            -PversionSuffix="-${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}+${GITHUB_SHA::7}"
 
       - name: Checksum
         run: |

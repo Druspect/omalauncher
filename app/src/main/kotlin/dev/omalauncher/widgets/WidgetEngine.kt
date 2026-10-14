@@ -88,7 +88,7 @@ class WidgetEngine(
     private val hashes = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     /** `persist` values, launcher-side like the grid layout, so widget files stay the agent's. */
-    private val stateDir = File(context.filesDir, "widget-state")
+    private val stateDir = File(dir, STATE_DIR).also { moveState(File(context.filesDir, "widget-state"), it) }
     val specs = mutableStateListOf<WidgetSpec>()
     private val instances = HashMap<String, WidgetInstance>()
     val layout = WidgetLayout(context)
@@ -736,6 +736,23 @@ class WidgetEngine(
             }
 
     companion object {
+        /**
+         * `persist` values, beside the widgets so Linux sees them (~/.config/omalauncher/widgets/.state) and backs them
+         * up with the widgets: a pet survives a reinstall or a new phone. Hidden, so it's never read as a widget.
+         */
+        private const val STATE_DIR = ".state"
+
+        /** Saves from before [STATE_DIR] move in once; one already there wins. */
+        private fun moveState(
+            old: File,
+            new: File,
+        ) {
+            if (!old.isDirectory) return
+            new.mkdirs()
+            old.listFiles()?.forEach { f -> if (!File(new, f.name).exists()) f.renameTo(File(new, f.name)) }
+            old.deleteRecursively()
+        }
+
         /** The default terminal tile, which [addTerminalWidget] copies. */
         private const val TERMINAL_ASSET = "45-terminal.owl"
         private const val TERMINAL_PREFIX = "terminal-"

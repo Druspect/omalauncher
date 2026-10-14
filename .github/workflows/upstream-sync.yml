@@ -1,0 +1,50 @@
+name: upstream-sync
+
+# Daily: when SimonSchubert/omalauncher tags a release adreno-glass doesn't have yet, merges it on a branch,
+# opens a pull request into adreno-glass and builds it (adreno-apk). A conflict fails this run instead, so
+# GitHub mails the owner; resolve it by hand on a branch named upstream-sync/<tag>.
+on:
+  schedule:
+    - cron: "17 11 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: adreno-glass
+          fetch-depth: 0
+
+      - name: Merge the newest upstream release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git remote add upstream https://github.com/SimonSchubert/omalauncher.git
+          git fetch -q upstream --tags
+          tag=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          if git merge-base --is-ancestor "$tag" HEAD; then
+            echo "adreno-glass already has $tag"; exit 0
+          fi
+          branch="upstream-sync/$tag"
+          if git ls-remote --exit-code origin "refs/heads/$branch" >/dev/null; then
+            echo "$branch is already waiting for review"; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          if ! git merge --no-edit "$tag"; then
+            git diff --name-only --diff-filter=U
+            echo "::error::$tag conflicts with adreno-glass in the files above"; exit 1
+          fi
+          git push origin "$branch"
+          gh pr create --base adreno-glass --head "$branch" --title "Merge upstream $tag" \
+            --body "Upstream released $tag. adreno-apk builds this branch; install it with scripts/deploy-adreno.sh $branch and merge once it holds up."
+          # A push or pull request made with this token starts no workflows; a dispatch does.
+          gh workflow run adreno-apk.yml --ref "$branch"
