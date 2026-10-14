@@ -24,6 +24,12 @@ bundle exec fastlane android internal     # build + upload to internal testing
 bundle exec fastlane android promote      # internal -> production
 ```
 
+Adreno GPU acceleration needs `app/src/main/assets/gpu/libvulkan_freedreno.so.xz`,
+which is not in git. Build it with `scripts/build-turnip.sh` on aarch64 Arch
+Linux ARM (the launcher's own guest) before a release that should include it.
+Without that blob, turning Adreno acceleration on fails its check and stays off.
+Mali still downloads its driver when it is turned on.
+
 Bump `versionCode` for every upload and add its changelog. Add the release's
 most important changes to `CHANGELOG.md` as they land under "Unreleased", and
 retitle that section with the version when releasing.

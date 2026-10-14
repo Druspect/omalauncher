@@ -49,28 +49,50 @@ drawing.
 ## GPU acceleration
 
 Opt-in, in settings › linux, on Mali GPUs (v10+: Pixel 7 and newer, recent
-MediaTek) and Adreno GPUs (Snapdragon). Turning it on installs Mesa and the
-Vulkan loader with pacman and a Mesa Vulkan driver for the phone's GPU into
-`/usr/local`, where pacman never touches it:
+MediaTek) and Adreno 6xx and newer (Snapdragon). Mali wins when both device
+nodes exist. Adreno is offered only when
+`/sys/class/kgsl/kgsl-3d0/gpu_model` names an Adreno 6xx or newer; a missing
+or unreadable model is not offered. Turning it on installs Mesa and the
+Vulkan loader with pacman, and a Mesa Vulkan driver for the phone's GPU,
+into `/usr/local`, where pacman never touches it. The Vulkan ICD manifest
+lives under `/usr/local/share/vulkan/icd.d/`, also outside pacman's files.
+An older build wrote that manifest under `/usr/share`; it is removed only
+when the file names our library.
 
 - Mali: the pinned PanVK-kbase driver for Android's `/dev/mali0`, downloaded
   from zenithblue-oss/panvk-kbase-android and checked against its sha256.
+  `/tmp/panvk.so` is removed even when the download or the hash check fails.
 - Adreno: Turnip built for KGSL, Android's `/dev/kgsl-3d0` (Arch's
   vulkan-freedreno only supports the desktop msm driver). It ships in the APK
-  (`assets/gpu/libvulkan_freedreno.so.xz`, not in git) and is reinstalled from
-  it when the app updates. `scripts/build-turnip.sh` builds it from Mesa's
-  source on aarch64 Arch Linux ARM, in the launcher's own guest, so it links
-  against the same libraries the guest has.
+  (`assets/gpu/libvulkan_freedreno.so.xz`, not in git; the uncompressed
+  library's sha256 is pinned in `linux/Gpu.kt`) and is reinstalled from it
+  when the app updates. `scripts/build-turnip.sh` builds it from Mesa 26.2.4
+  on aarch64 Arch Linux ARM, in the launcher's own guest, so it links against
+  the same libraries the guest has. The build does not link SPIRV-Tools. A
+  release APK needs that script, the same way it needs `scripts/fetch-proot.sh`
+  (`docs/RELEASING.md`).
 
-OpenGL is Arch's stock Mesa on top of either, via zink. Frames still arrive as wl_shm buffers
-(`MESA_VK_WSI_DEBUG=sw`), so the compositor is the same either way.
+OpenGL is Arch's stock Mesa on top of either, via zink. The driver is asked
+to present through wl_shm (`MESA_VK_WSI_DEBUG=sw`), so the compositor stays
+the one in `wlbridge.c`.
 
-`linux/Gpu.kt` only switches guest apps to the GPU (`Proot.graphicsEnv`)
-after a check passes (vulkaninfo finds PanVK or Turnip, eglinfo gets zink),
-and checks again after every system or app update; if that fails, apps render in software
-(llvmpipe) and settings offers a retry. One app can opt out with
-`GALLIUM_DRIVER=llvmpipe app`. Terminal apps (foot) draw on the CPU and
-don't change.
+`linux/Gpu.kt` switches guest apps to the GPU (`Proot.graphicsEnv`) only
+after a check passes: vulkaninfo finds PanVK or Turnip, and
+`eglinfo -B -p surfaceless` reports zink. It checks again after every system
+or app update, and rewrites the manifest before that check. A startup whose
+check already passed still writes the manifest when the file is missing, so
+an update that moved it does not leave Vulkan with no driver. If the check
+fails, apps render in software (llvmpipe) and settings offers a retry.
+Turning it off deletes our manifest and points `VK_ICD_FILENAMES` and
+`VK_DRIVER_FILES` at a manifest that is never created, so the loader does
+not keep the driver. Vulkan has no software driver in that mode. One app
+can opt out with `GALLIUM_DRIVER=llvmpipe app`. Terminal apps (foot) draw
+on the CPU and don't change.
+
+Tried on a OnePlus 13 (Adreno 830): the check passed and the row read
+`on · Adreno (TM) 830`. A windowed OpenGL client (`es2gears_wayland`) stayed
+black while the process kept running. `vkcube` was not captured. A passing
+surfaceless check means the driver loaded.
 
 ## Updates
 
