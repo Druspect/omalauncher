@@ -37,6 +37,7 @@ import dev.omalauncher.linux.matches
 import dev.omalauncher.linux.resolveLinuxIcon
 import dev.omalauncher.linux.run
 import dev.omalauncher.linux.shellQuote
+import dev.omalauncher.linux.agentInvocation
 import dev.omalauncher.theme.Style
 import dev.omalauncher.theme.StyleStore
 import dev.omalauncher.theme.ThemeStore
@@ -53,12 +54,16 @@ import dev.omalauncher.wayland.WaylandServer
 import dev.omalauncher.wayland.XdgToplevel
 import dev.omalauncher.widgets.Shortcut
 import dev.omalauncher.widgets.WidgetEngine
+import dev.omalauncher.watch.OmaWatchBridge
+import dev.omalauncher.watch.WatchAgent
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
@@ -91,7 +96,8 @@ class Runtime(
     val themes = ThemeStore(context, proot, style, isLinux = { linux }, onConfigChanged = ::syncGuest)
     private val audio = AudioBridge(proot)
     private val openBridge = OpenBridge(context, proot, onOpenFiles = ::openFiles)
-    val agents = AgentStore(proot, onChanged = ::syncGuest)
+    val watch = OmaWatchBridge(context)
+    val agents = AgentStore(proot, onChanged = { syncGuest(); publishWatchAgents() })
     val pacman = Pacman(context, proot)
     val widgets = WidgetEngine(context, proot, this)
     val updates = SystemUpdates(proot, pacman, agents)
@@ -142,6 +148,7 @@ class Runtime(
     var linuxWanted by mutableStateOf(false)
 
     init {
+        watch.onPrompt = ::handleWatchPrompt
         // Saved, so removing Linux later doesn't bring the first-run screen back.
         if (launcherReady) prefs.edit().putBoolean(SETUP_DONE, true).apply()
         themes.loadPalette()
@@ -153,6 +160,11 @@ class Runtime(
         // foot.ini follows the terminal settings, from the Style menu or the file alike.
         scope.launch {
             snapshotFlow { style.style[Style.TERMINAL_FONT] to style.style[Style.TERMINAL_TEXT] }.drop(1).collect { terminalFont.write() }
+        }
+        scope.launch {
+            snapshotFlow { themes.current?.let { it.name to it.colors } }
+                .distinctUntilChanged()
+                .collect { theme -> theme?.let { watch.publishTheme(it.first, it.second) } }
         }
         androidApps.start()
         // Omarchy's Super bindings inside Linux windows; the home screen handles its own (see MainActivity).
@@ -198,7 +210,9 @@ class Runtime(
                 launcherFiles.sync()
                 agents.load()
             }
+            publishWatchAgents()
             themes.load()
+            watch.announce()
             style.start()
             widgets.start()
             // On the first-run screen the download is the screen's job, with progress.
@@ -254,6 +268,7 @@ class Runtime(
                     updates.forget()
                     agents.load()
                 }
+                publishWatchAgents()
                 gpu.turnOff()
                 linuxApps.clear()
                 linuxIcons.clear()
@@ -311,6 +326,7 @@ class Runtime(
             synchronized(server) { server.input.setKeymap(proot.keymap.path) }
             agents.load()
         }
+        publishWatchAgents()
         widgets.linuxChanged(true)
         refreshApps()
         withContext(Dispatchers.IO) { updates.load() }
@@ -458,6 +474,7 @@ class Runtime(
         command: String?,
         name: String,
         agent: Agent? = null,
+        onExit: () -> Unit = {},
     ) {
         if (!linux) {
             linuxWanted = true
@@ -469,7 +486,64 @@ class Runtime(
         launchedNames[appId] = name
         if (agent != null) launchedAgents[appId] = agent
         val args = command?.let { " -e bash -c " + shellQuote(it) }.orEmpty()
-        launch("foot --app-id=$appId${terminalFont.optionFor(appId, command)}$args")
+        launch("foot --app-id=$appId${terminalFont.optionFor(appId, command)}$args", onExit)
+    }
+
+    /** A verified watch prompt enters the same selected-agent path as the phone prompt bar. */
+    private fun handleWatchPrompt(
+        ref: String,
+        prompt: String,
+        requestedAgent: String?,
+    ) {
+        scope.launch {
+            val state = bootstrap.state.first { it !is LinuxState.Checking }
+            val agent = requestedAgent?.let(::agentForWatch) ?: agents.default
+            when {
+                state !is LinuxState.Installed -> {
+                    watch.sendStatus("launcher", "failed", ref, "linux not installed")
+                    return@launch
+                }
+                agent == null -> {
+                    val line = requestedAgent?.let { "agent unavailable: $it" } ?: "no agent selected"
+                    watch.sendStatus("launcher", "failed", ref, line)
+                    return@launch
+                }
+            }
+            watch.sendStatus(agent.name, "running", ref)
+            terminal("${agentInvocation(agent.bin, prompt)}; exec bash", agent.name, agent) {
+                watch.sendStatus(agent.name, "exited", ref)
+            }
+        }
+    }
+
+    /** Watch ids stay stable even when the local CLI has a product-specific name. */
+    private fun watchAgentId(agent: Agent): String = when (agent.bin) {
+        "codex" -> "chatgpt"
+        else -> agent.bin
+    }
+
+    private fun watchAgentName(agent: Agent): String = when (agent.bin) {
+        "codex" -> "ChatGPT"
+        else -> agent.name.removeSuffix(" Code")
+    }
+
+    private fun agentForWatch(id: String): Agent? {
+        val requested = id.trim().lowercase()
+        return agents.installed.firstOrNull { it.bin == requested || watchAgentId(it) == requested }
+    }
+
+    private fun publishWatchAgents() {
+        val installed = agents.installed
+        val coreIds = listOf("claude", "chatgpt", "grok")
+        val core = coreIds
+            .map { id ->
+                val agent = installed.firstOrNull { watchAgentId(it) == id }
+                WatchAgent(id, agent?.let(::watchAgentName) ?: id.replaceFirstChar(Char::uppercase), agent != null)
+            }
+        val extras = installed
+            .filterNot { watchAgentId(it) in coreIds }
+            .map { WatchAgent(watchAgentId(it), watchAgentName(it), true) }
+        watch.publishAgents(core + extras, agents.default?.let(::watchAgentId))
     }
 
     /** Opens a pinned app from the home screen. A Linux one runs its current desktop entry, which an update may have changed. */

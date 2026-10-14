@@ -216,5 +216,16 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Runs a user-started Linux environment and its display server" />
         </service>
+        <service
+            android:name=".watch.OmaWatchBridgeService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data
+                    android:host="*"
+                    android:pathPrefix="/omawatch"
+                    android:scheme="wear" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

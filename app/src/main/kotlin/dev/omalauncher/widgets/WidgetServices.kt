@@ -42,6 +42,7 @@ import dev.omalauncher.widgets.lang.Str
 import dev.omalauncher.widgets.lang.Value
 import dev.omalauncher.widgets.lang.WidgetError
 import dev.omalauncher.widgets.lang.bool
+import dev.omalauncher.widgets.lang.Lst
 import dev.omalauncher.androidAppKey
 import dev.omalauncher.ui.LauncherStyle
 import dev.omalauncher.widgets.runtime.Alarm
@@ -61,6 +62,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -134,6 +136,7 @@ class WidgetServices(
             "volume" -> volume.value()
             "alarm" -> alarm.value()
             "modes" -> modes.value()
+            "watch" -> watch()
             else -> throw WidgetError("unknown android source $name")
         }
 
@@ -144,6 +147,7 @@ class WidgetServices(
             "volume" -> volume.updates()
             "alarm" -> alarm.updates()
             "modes" -> modes.updates()
+            "watch" -> runtime.watch.state.map(::watchValue).distinctUntilChanged()
             "battery" ->
                 callbackFlow {
                     val receiver =
@@ -164,6 +168,28 @@ class WidgetServices(
         }
 
     override fun androidImage(src: String) = media.art(src)
+
+    private fun watch(): Value = watchValue(runtime.watch.state.value)
+
+    private fun watchValue(state: dev.omalauncher.watch.WatchBridgeState): Value =
+        Obj(
+            mapOf(
+                "line" to Str(state.line),
+                "fingerprint" to (state.fingerprint?.let(::Str) ?: Null),
+                "pending" to (state.pendingFingerprint?.let(::Str) ?: Null),
+                "pinned" to bool(state.pinned),
+                "theme" to (state.theme?.let(::Str) ?: Null),
+                "apps" to Lst(state.apps.map { app ->
+                    Obj(
+                        mapOf(
+                            "id" to Str(app.id),
+                            "name" to Str(app.name),
+                            "available" to bool(app.available),
+                        ),
+                    )
+                }),
+            ),
+        )
 
     /** "work" or "clone" for an app in a profile beside the launcher's own, as the drawer marks it; null for its own. */
     private fun profileKind(user: UserHandle): String? {
@@ -332,6 +358,7 @@ class WidgetServices(
                     Toast.makeText(context, "no app opens $arg", Toast.LENGTH_SHORT).show()
                 }
             "launcher" -> launcherAction?.invoke(arg)
+            "watch" -> runtime.watch.action(arg)
             "media" -> media.control(arg)
             "volume" -> volume.control(args[0])
             "notification" -> args.getOrNull(1)?.takeIf { it != Null }?.let { notifications.control(arg, it.toString()) }
