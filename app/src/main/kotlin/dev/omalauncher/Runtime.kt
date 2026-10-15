@@ -101,8 +101,6 @@ class Runtime(
     val themes = ThemeStore(context, proot, style, isLinux = { linux }, onConfigChanged = ::syncGuest)
     private val audio = AudioBridge(proot)
     private val openBridge = OpenBridge(context, proot, onOpenFiles = ::openFiles, onEdit = ::edit)
-    val agents = AgentStore(proot, onChanged = ::syncGuest)
-    val pacman = Pacman(context, proot)
     val watch = OmaWatchBridge(context)
     val agents = AgentStore(proot, onChanged = { syncGuest(); publishWatchAgents() })
     val pacman = Pacman(context, proot)
