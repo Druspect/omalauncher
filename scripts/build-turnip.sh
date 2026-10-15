@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Builds Turnip, Mesa's Vulkan driver for Adreno GPUs, for Android's /dev/kgsl-3d0 (Arch's own
-# vulkan-freedreno only talks to the desktop msm DRM driver), and writes it, xz-compressed, to
-# app/src/main/assets/gpu (not in git), where linux/Gpu.kt installs it from. Run it on aarch64 Arch
-# Linux ARM, so the driver links against the same libraries the guest has: in the launcher's own
-# guest (about 300 MB of build tools, 10-20 minutes under proot), or as CI does
+# vulkan-freedreno only talks to the desktop msm DRM driver), and writes it, xz-compressed and with
+# its sha256, to app/src/main/assets/gpu (not in git), where linux/Gpu.kt installs it from. Run it on
+# aarch64 Arch Linux ARM, so the driver links against the same libraries the guest has: in the
+# launcher's own guest (about 300 MB of build tools, 10-20 minutes under proot), or as CI does
 # (.github/workflows/adreno-apk.yml), in an Arch Linux ARM chroot.
 set -euo pipefail
 
@@ -49,5 +49,6 @@ so=build/src/freedreno/vulkan/libvulkan_freedreno.so
 strip -o "$WORK/libvulkan_freedreno.so" $so
 mkdir -p "$(dirname "$OUT")"
 xz -T0 -9 -c "$WORK/libvulkan_freedreno.so" > "$OUT"
-echo "wrote $OUT ($(du -h "$OUT" | cut -f1)); uncompressed sha256:"
-sha256sum "$WORK/libvulkan_freedreno.so"
+# linux/Gpu.kt checks the uncompressed driver against this before installing it.
+sha256sum "$WORK/libvulkan_freedreno.so" | cut -d' ' -f1 > "$OUT.sha256"
+echo "wrote $OUT ($(du -h "$OUT" | cut -f1)), uncompressed sha256 $(cat "$OUT.sha256")"

@@ -49,12 +49,12 @@ jobs:
           R="$RUNNER_TEMP/alarm"
           sudo mkdir "$R/src" && git archive HEAD | sudo tar -x -C "$R/src"
           sudo chroot "$R" /bin/bash -c 'cd /src && WORK=/work scripts/build-turnip.sh'
-          cp "$R/src/app/src/main/assets/gpu/libvulkan_freedreno.so.xz" .
+          cp "$R"/src/app/src/main/assets/gpu/libvulkan_freedreno.so.xz* .
 
       - uses: actions/upload-artifact@v7
         with:
           name: turnip
-          path: libvulkan_freedreno.so.xz
+          path: libvulkan_freedreno.so.xz*
 
   apk:
     needs: turnip
@@ -101,7 +101,11 @@ jobs:
           EOF
 
       - name: Build
-        run: ./gradlew :app:assembleRelease -PapplicationIdSuffix=.adreno -PappLabel="Omalauncher Adreno"
+        run: |
+          # Without the driver's sha256, turning the GPU on would fail on the phone.
+          test -s app/src/main/assets/gpu/libvulkan_freedreno.so.xz.sha256
+          ./gradlew :app:testDebugUnitTest --tests 'dev.omalauncher.linux.GpuTest' \
+            :app:assembleRelease -PapplicationIdSuffix=.adreno -PappLabel="Omalauncher Adreno"
 
       - name: Checksum
         run: |
