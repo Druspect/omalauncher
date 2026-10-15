@@ -139,6 +139,28 @@ class Runtime(
 
     private val prefs = context.getSharedPreferences("launcher", Context.MODE_PRIVATE)
 
+    /**
+     * Terminal mode, for work and battery: no animations ([Motion]), a black screen without wallpaper or frost,
+     * Linux apps off the GPU and games out of the drawer. Off is the glass launcher.
+     */
+    var terminalMode by mutableStateOf(prefs.getBoolean(TERMINAL_MODE, false))
+        private set
+
+    fun switchTerminalMode(on: Boolean) {
+        if (on == terminalMode) return
+        terminalMode = on
+        Motion.off = on
+        val edit = prefs.edit().putBoolean(TERMINAL_MODE, on)
+        if (on) {
+            // Remembered, so leaving terminal mode gives the GPU back only to someone who had it on.
+            edit.putBoolean(GPU_BEFORE_TERMINAL, gpu.wanted)
+            if (gpu.wanted) gpu.turnOff()
+        } else if (prefs.getBoolean(GPU_BEFORE_TERMINAL, false)) {
+            setGpu(true)
+        }
+        edit.apply()
+    }
+
     /** Asked [linuxElsewhere] to hand Linux over; once per process, and not right after this one handed it away. */
     var askedForLinux = prefs.getBoolean(HANDED_OVER, false).also { if (it) prefs.edit().remove(HANDED_OVER).apply() }
 
@@ -158,6 +180,7 @@ class Runtime(
     init {
         // Saved, so removing Linux later doesn't bring the first-run screen back.
         if (launcherReady) prefs.edit().putBoolean(SETUP_DONE, true).apply()
+        Motion.off = terminalMode
         themes.loadPalette()
         // An agent or the user edited style.toml; the rest of the style is read where it's drawn.
         style.onExternalChange = { old, new ->
@@ -658,5 +681,7 @@ class Runtime(
         private const val TAG = "runtime"
         private const val SETUP_DONE = "setup_done"
         private const val HANDED_OVER = "linux_handed_over"
+        private const val TERMINAL_MODE = "terminal_mode"
+        private const val GPU_BEFORE_TERMINAL = "gpu_before_terminal"
     }
 }

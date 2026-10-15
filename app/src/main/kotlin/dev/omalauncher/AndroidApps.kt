@@ -54,6 +54,8 @@ data class AndroidApp(
     val system: Boolean = false,
     /** [user] is a clone profile, holding a second copy of an app the owner has too, rather than a work profile. */
     val clone: Boolean = false,
+    /** Says it's a game (its category, or the older flag); terminal mode leaves these out. */
+    val game: Boolean = false,
 ) {
     /** Stable across restarts and unique across profiles; icons, usage and pinned apps go by it. */
     val key get() = androidAppKey(component, profile)
@@ -64,6 +66,9 @@ data class AndroidApp(
     /** In a work profile: neither the launcher's own nor a clone. */
     val work get() = profile != null && !clone
 }
+
+@Suppress("DEPRECATION")
+private fun isGame(info: ApplicationInfo) = info.category == ApplicationInfo.CATEGORY_GAME || info.flags and ApplicationInfo.FLAG_IS_GAME != 0
 
 /** [label] as screen readers say it, worded as Android's own badged labels; [profile] and [clone] as in [AndroidApp]. */
 fun spokenLabel(
@@ -522,7 +527,7 @@ class AndroidAppCatalog(
                                     .onFailure { Log.w(TAG, "cannot list apps in $user", it) }
                                     .getOrDefault(emptyList())
                                     .filter { it.componentName.packageName != context.packageName }
-                                    .map { it to AndroidApp(it.label.toString(), it.componentName, user, profile, it.applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0, clone = clone) }
+                                    .map { it to AndroidApp(it.label.toString(), it.componentName, user, profile, it.applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0, clone = clone, game = isGame(it.applicationInfo)) }
                             }
                             // The same app in two profiles: the owner's one first.
                             .sortedWith(compareBy({ it.second.label.lowercase() }, { it.second.profile != null }))

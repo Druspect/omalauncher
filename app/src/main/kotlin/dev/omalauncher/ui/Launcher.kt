@@ -37,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.draw.drawBehind
@@ -73,7 +74,14 @@ fun LauncherRoot(
     Box(
         Modifier
             .fillMaxSize()
-            .then(if (showOwnBackground) Modifier.background(Palette.background) else Modifier),
+            .then(
+                when {
+                    // Black lights no pixels on the phone's OLED; MainActivity stops Android drawing the wallpaper too.
+                    runtime.terminalMode -> Modifier.background(Color.Black)
+                    showOwnBackground -> Modifier.background(Palette.background)
+                    else -> Modifier
+                },
+            ),
     ) {
         if (ready) DesktopScreen(runtime, state) else SetupScreen(runtime)
     }
@@ -96,7 +104,8 @@ private fun DesktopScreen(
 
     // Frosted glass: a blurred copy of the wallpaper the tiles draw their part of; see Backdrop.
     val blurDp = LauncherStyle.style[Style.WIDGET_BLUR]
-    val wallpaper = runtime.themes.wallpaper.takeUnless { runtime.themes.liveWallpaperActive }
+    val terminalMode = runtime.terminalMode
+    val wallpaper = runtime.themes.wallpaper.takeUnless { runtime.themes.liveWallpaperActive || terminalMode }
     val density = LocalDensity.current.density
     LaunchedEffect(wallpaper, blurDp, density) {
         Backdrop.offset = { state.wallpaperOffset }
@@ -109,7 +118,7 @@ private fun DesktopScreen(
                 }
             }
     }
-    if (!runtime.themes.liveWallpaperActive) {
+    if (!runtime.themes.liveWallpaperActive && !terminalMode) {
         runtime.themes.wallpaper?.let { bmp ->
             // Read while drawing, so swiping pages only redraws this.
             Canvas(Modifier.fillMaxSize()) {

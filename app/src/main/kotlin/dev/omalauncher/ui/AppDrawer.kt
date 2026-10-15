@@ -199,7 +199,9 @@ internal class BarSearch(
 }
 
 private fun allApps(runtime: Runtime): List<AppHit> =
-    runtime.linuxApps.map { AppHit.Linux(it) } + runtime.androidApps.apps.map { AppHit.Android(it) } + runtime.androidApps.shortcuts.map { AppHit.Shortcut(it) }
+    runtime.linuxApps.map { AppHit.Linux(it) } +
+        runtime.androidApps.apps.filterNot { runtime.terminalMode && it.game }.map { AppHit.Android(it) } +
+        runtime.androidApps.shortcuts.map { AppHit.Shortcut(it) }
 
 internal fun searchApps(
     runtime: Runtime,

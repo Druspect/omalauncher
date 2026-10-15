@@ -93,6 +93,10 @@ fun HomeMenu(
             state.homeMenuOpen = false
             if (linux) state.show(SettingsPage.Packages) else state.show(SettingsPage.Linux)
         }
+        MenuItem(if (runtime.terminalMode) "glass mode" else "terminal mode") {
+            state.homeMenuOpen = false
+            runtime.switchTerminalMode(!runtime.terminalMode)
+        }
         Box(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) { ThemeStrip(
                 runtime.themes,
                 gutter = 20.dp,

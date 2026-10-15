@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.view.KeyEvent
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -31,6 +32,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         applySystemBars(this, Palette.isLight)
+        Motion.follow(this)
         runtime.start()
         state.onSettings = { page, homePage -> runtime.openSettings(page, homePage) }
         setContent {
@@ -45,6 +47,12 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             snapshotFlow { runtime.launcherReady }.first { it }
             withResumed { requestHomeRole() }
+        }
+        // Terminal mode: Android stops drawing the wallpaper, a live one included, behind home.
+        lifecycleScope.launch {
+            snapshotFlow { runtime.terminalMode }.collect { on ->
+                if (on) window.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER) else window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
+            }
         }
         lifecycleScope.launch {
             val holder = snapshotFlow { runtime.linuxElsewhere }.filterNotNull().first()
