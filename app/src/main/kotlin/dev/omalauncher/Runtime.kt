@@ -68,6 +68,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.concurrent.thread
 
@@ -100,7 +101,12 @@ class Runtime(
     val usage = AppUsage(context)
     val themes = ThemeStore(context, proot, style, isLinux = { linux }, onConfigChanged = ::syncGuest)
     private val audio = AudioBridge(proot)
-    private val openBridge = OpenBridge(context, proot, onOpenFiles = ::openFiles, onEdit = ::edit)
+    private val openBridge =
+        OpenBridge(context, proot, onOpenFiles = ::openFiles, onEdit = ::edit, onWatchReply = ::watchReply, onSay = { speaker.say(it) })
+    private val speaker = dev.omalauncher.watch.Speaker(context)
+
+    /** The watch request an agent is answering, and that agent's name: where `omawatch-reply` goes. */
+    @Volatile private var watchRequest: Pair<String, String>? = null
     val watch = OmaWatchBridge(context)
     val agents = AgentStore(proot, onChanged = { syncGuest(); publishWatchAgents() })
     val pacman = Pacman(context, proot)
@@ -527,10 +533,23 @@ class Runtime(
                 return@launch
             }
             watch.sendStatus(agent.name, "running", ref)
-            terminal("${agentInvocation(agent.bin, prompt)}; exec bash", agent.name, agent) {
+            watchRequest = ref to agent.name
+            terminal("${agentInvocation(agent.bin, withWatchProfile(prompt))}; exec bash", agent.name, agent) {
                 watch.sendStatus(agent.name, "exited", ref)
             }
         }
+    }
+
+    /** The omawatch profile (the owner may have edited or deleted it), then the transcribed request. */
+    private fun withWatchProfile(prompt: String): String {
+        val profile = runCatching { File(proot.home, OpenBridge.WATCH_PROFILE).readText().trim() }.getOrNull()
+        return if (profile.isNullOrEmpty()) prompt else "$profile\n\n---\nWatch transmission: $prompt"
+    }
+
+    /** `omawatch-reply` from Linux: the line under the watch's listen button, for the request in flight. */
+    private fun watchReply(text: String) {
+        val (ref, agent) = watchRequest ?: return
+        watch.sendStatus(agent, "running", ref, text)
     }
 
     /** The widget lists installed agents. The watch is not sent this list. */

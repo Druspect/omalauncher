@@ -25,6 +25,10 @@ class OpenBridge(
     private val onOpenFiles: (String) -> Unit,
     /** A guest path to edit, and the host path of the FIFO that gets the reply once it's closed. */
     private val onEdit: (String, String) -> Unit,
+    /** `omawatch-reply`: text for the watch's open request. */
+    private val onWatchReply: (String) -> Unit = {},
+    /** `omawatch-say`: text to speak. */
+    private val onSay: (String) -> Unit = {},
 ) {
     private val fifo = File(proot.runtimeDir, "open.fifo")
     private val guestFifo = "${Proot.GUEST_RUNTIME_DIR}/${fifo.name}"
@@ -58,6 +62,8 @@ class OpenBridge(
             val (reply, path) = url.removePrefix(EDIT_PREFIX).split(' ', limit = 2).takeIf { it.size == 2 } ?: return
             return onEdit(path, proot.hostFile(reply).path)
         }
+        if (url.startsWith(WATCH_REPLY_PREFIX)) return onWatchReply(url.removePrefix(WATCH_REPLY_PREFIX))
+        if (url.startsWith(SAY_PREFIX)) return onSay(url.removePrefix(SAY_PREFIX))
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
             Log.i(TAG, "ignoring non-URL $url")
             return
@@ -111,11 +117,58 @@ class OpenBridge(
                 exec micro "${'$'}@"
                 """.trimIndent() + "\n"
             },
+            watchShim(WATCH_REPLY_COMMAND, WATCH_REPLY_PREFIX, "shows text on the watch, as the reply to its open request"),
+            watchShim(SAY_COMMAND, SAY_PREFIX, "speaks text, in Bluetooth headphones if connected, else on the phone"),
+            // What an agent reads before every request from the watch; the owner's to edit.
+            Managed.text(File(proot.home, WATCH_PROFILE), Policy.Seeded) { WATCH_PROFILE_TEXT },
         )
     }
 
-    private companion object {
-        const val FILES_PREFIX = "omarchy-files:"
-        const val EDIT_PREFIX = "omarchy-edit:"
+    /** One line, whatever the arguments or stdin held: the FIFO takes a line per message. */
+    private fun watchShim(
+        command: String,
+        prefix: String,
+        what: String,
+    ) = Managed.text(File(proot.rootfs, "usr/local/bin/$command"), Policy.Owned, executable = true) {
+        """
+        #!/bin/sh
+        # omalauncher: $command "<text>" $what (see OpenBridge.kt)
+        if [ ${'$'}# -gt 0 ]; then text="${'$'}*"; else text=${'$'}(cat); fi
+        text=${'$'}(printf '%s' "${'$'}text" | tr '\n\r\t' '   ' | cut -c1-500)
+        [ -n "${'$'}text" ] || { echo "usage: $command <text>" >&2; exit 2; }
+        timeout 2 sh -c 'printf "%s\n" "${'$'}1" > $guestFifo' sh "$prefix${'$'}text"
+        """.trimIndent() + "\n"
+    }
+
+    companion object {
+        private const val FILES_PREFIX = "omarchy-files:"
+        private const val EDIT_PREFIX = "omarchy-edit:"
+        private const val WATCH_REPLY_PREFIX = "omawatch-reply:"
+        private const val SAY_PREFIX = "omawatch-say:"
+        const val WATCH_REPLY_COMMAND = "omawatch-reply"
+        const val SAY_COMMAND = "omawatch-say"
+
+        /** In the guest's home. */
+        const val WATCH_PROFILE = ".config/omalauncher/omawatch/profile.md"
+
+        val WATCH_PROFILE_TEXT =
+            """
+            # omawatch profile
+
+            This request came from the owner's watch (OmaWatch): spoken while holding a button, transcribed on the phone
+            by Whisper, so expect misheard words. The owner is away from the screen and reads a 1.4" display.
+
+            Talk like a duty officer on a radio net: terse, brevity codes, no pleasantries, no markdown, no lists.
+            Lead with the result. One transmission is at most 120 characters.
+
+            Deliver every answer with one of these, never only in this terminal:
+            - `$WATCH_REPLY_COMMAND "<text>"` puts it on the watch. The default.
+            - `$SAY_COMMAND "<text>"` speaks it: in the headphones when connected, else on the phone's speaker.
+              Use it when asked to say, read or tell something, or when the answer is longer than one transmission.
+
+            Procedure: acknowledge (`$WATCH_REPLY_COMMAND "ACK. <task>"`), report only at milestones, close with
+            `$WATCH_REPLY_COMMAND "DONE. <result>"` or `"FAIL. <reason>"`. Before anything destructive or irreversible,
+            ask by reply and stop; the owner answers by holding the button again.
+            """.trimIndent() + "\n"
     }
 }
