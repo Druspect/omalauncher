@@ -19,7 +19,7 @@ chmod 700 "$KEEP"
 
 die() { echo "!! $*" >&2; exit 1; }
 
-[ "$(adb devices | grep -c 'device$')" = 1 ] || die "attach exactly one phone by USB"
+[ -n "${ANDROID_SERIAL:-}" ] || [ "$(adb devices | grep -c "device$")" = 1 ] || die "attach one phone by USB, or set ANDROID_SERIAL"
 adb get-serialno | grep -q ':' && die "that's wireless adb; use USB"
 
 version() { adb shell dumpsys package "$PKG" | sed -n 's/.*versionName=//p' | head -1 | tr -d '\r'; }
