@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 @Composable
 internal fun HandOverDialog(
     from: String,
+    fromPackage: String,
     here: String,
     onHandOver: () -> Unit,
     onDismiss: () -> Unit,
@@ -18,6 +19,7 @@ internal fun HandOverDialog(
     DialogFrame(onDismiss) {
         BasicText("hand linux over?", style = Mono.copy(fontSize = TextSize.Title))
         BasicText("$from wants to run Linux. It stops in $here: its terminals, agents and their sessions end.", style = Mono)
+        BasicText(fromPackage, style = Mono.copy(color = Palette.muted))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             BracketAction("keep here", Palette.muted, onDismiss)
             BracketAction("hand over", Palette.accent, onHandOver)

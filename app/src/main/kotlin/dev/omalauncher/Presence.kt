@@ -21,8 +21,15 @@ class Presence(
     /** Takes the claim; false if another build holds it. */
     fun claim(): Boolean {
         if (held != null) return true
-        val lock = bind(LOCK) ?: return false
-        held = listOfNotNull(lock, bind("$LOCK.${context.packageName}"))
+        // Its own name first, so a build that finds the lock taken can always tell whose it is. A probe from
+        // [holder] can hold the name for a moment, hence the retries.
+        val mine = retry { bind("$LOCK.${context.packageName}") }
+        val lock = bind(LOCK)
+        if (lock == null) {
+            mine?.close()
+            return false
+        }
+        held = listOfNotNull(lock, mine)
         return true
     }
 
@@ -31,8 +38,20 @@ class Presence(
         held = null
     }
 
-    /** The build whose Linux is online, if it is one that can hand it over. */
-    fun holder(): String? = builds().firstOrNull { pkg -> bind("$LOCK.$pkg")?.close() == null }
+    /** The build whose Linux is online, if it is one that can hand it over; asked a few times, in case it's starting. */
+    fun holder(): String? {
+        val builds = builds()
+        return retry { builds.firstOrNull { pkg -> bind("$LOCK.$pkg")?.close() == null } }
+    }
+
+    /** [attempt] until it gives something, a few times over a fifth of a second. Rare: only when two builds meet. */
+    private fun <T> retry(attempt: () -> T?): T? {
+        repeat(5) {
+            attempt()?.let { return it }
+            Thread.sleep(40)
+        }
+        return null
+    }
 
     /** Other installed builds: the ones that answer [ACTION_HAND_OVER]. */
     fun builds(): List<String> =

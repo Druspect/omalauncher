@@ -28,6 +28,7 @@ abstract class InstantActivity : ComponentActivity() {
 
     /** Like setContent, but drawing nothing while the window leaves. */
     protected fun setInstantContent(content: @Composable () -> Unit) {
+        Motion.follow(this)
         setContent { if (!hidden) content() }
     }
 

@@ -292,7 +292,22 @@ class WidgetEngine(
     }
 
     /** Widgets, pinned apps and folders on [page]. Wrappers compare by spec, so unchanged pages skip recomposition. */
-    fun itemsOn(page: Int): List<HomeItem> = specs.filter { it.page == page }.map(::WidgetItem) + shortcuts.onGrid().filter { it.page == page }
+    fun itemsOn(page: Int): List<HomeItem> =
+        specs.filter { it.page == page }.map(::WidgetItem) +
+            shortcuts.onGrid().filter { it.page == page }.mapNotNull { item ->
+                when {
+                    !runtime.terminalMode -> item
+                    item is Shortcut -> item.takeUnless(::isGame)
+                    item is Folder -> item.copy(apps = item.apps.filterNot(::isGame)).takeIf { it.apps.isNotEmpty() }
+                    else -> item
+                }
+            }
+
+    /** Terminal mode leaves games off home; their cells stay theirs for when it ends. */
+    private fun isGame(app: Shortcut) = app.component?.let { runtime.androidApps.pinned(it, app.profile)?.game } == true
+
+    /** Wakes every widget's sources now, rather than at the end of their intervals. */
+    fun wakeAll() = instances.values.forEach { it.wake() }
 
     private val pageList by derivedStateOf {
         (specs.map { it.page } + shortcuts.onGrid().map { it.page }).distinct().sorted().ifEmpty { listOf(1) }
@@ -412,6 +427,7 @@ class WidgetEngine(
                     File(stateDir, "$name.json"),
                     onScreen = { open -> if (open) openScreen = name else if (openScreen == name) openScreen = null },
                     linux = { linux },
+                    terminalMode = { runtime.terminalMode },
                 )
             prev?.let(inst::adopt)
             instances[spec.file.name] = inst

@@ -150,15 +150,25 @@ class Runtime(
         if (on == terminalMode) return
         terminalMode = on
         Motion.off = on
-        val edit = prefs.edit().putBoolean(TERMINAL_MODE, on)
+        prefs.edit().putBoolean(TERMINAL_MODE, on).apply()
         if (on) {
             // Remembered, so leaving terminal mode gives the GPU back only to someone who had it on.
-            edit.putBoolean(GPU_BEFORE_TERMINAL, gpu.wanted)
-            if (gpu.wanted) gpu.turnOff()
-        } else if (prefs.getBoolean(GPU_BEFORE_TERMINAL, false)) {
-            setGpu(true)
+            if (gpu.wanted) {
+                prefs.edit().putBoolean(GPU_BEFORE_TERMINAL, true).apply()
+                gpu.turnOff()
+            }
+        } else {
+            restoreGpu()
+            // Widgets slept up to terminal mode's interval; they catch up now.
+            widgets.wakeAll()
         }
-        edit.apply()
+    }
+
+    /** Gives the GPU back after terminal mode once Linux runs; until then the wish stays saved. */
+    private fun restoreGpu() {
+        if (terminalMode || !linux || !prefs.getBoolean(GPU_BEFORE_TERMINAL, false)) return
+        prefs.edit().remove(GPU_BEFORE_TERMINAL).apply()
+        scope.launch { gpu.turnOn() }
     }
 
     /** Asked [linuxElsewhere] to hand Linux over; once per process, and not right after this one handed it away. */
@@ -414,6 +424,7 @@ class Runtime(
         }
         // Apps render in software until the GPU passed its check on this system build.
         scope.launch { gpu.recheck() }
+        restoreGpu()
     }
 
     /** Turns GPU acceleration on (installing and checking the driver) or off, for Linux apps started from then on. */

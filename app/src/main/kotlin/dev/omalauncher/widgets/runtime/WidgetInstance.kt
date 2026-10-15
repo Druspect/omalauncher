@@ -131,6 +131,8 @@ class WidgetInstance(
     private val onScreen: (Boolean) -> Unit = {},
     /** Linux is installed and running; `optional` sources wait for it. Snapshot state. */
     private val linux: () -> Boolean = { true },
+    /** Terminal mode: sources poll at most every [SLOW_POLL], clocks excepted. */
+    private val terminalMode: () -> Boolean = { false },
 ) : Host {
     override val budget = Budget()
     val root = Env.root(this)
@@ -503,6 +505,9 @@ class WidgetInstance(
 
     private fun refresh() = refreshes.update { it + 1 }
 
+    /** Polls every source now; see [WidgetEngine.wakeAll]. */
+    fun wake() = refresh()
+
     /**
      * Runs the sources while [active] is true (home screen showing this page or
      * a neighbour); otherwise they wait without polling.
@@ -565,7 +570,7 @@ class WidgetInstance(
                                 val start = System.currentTimeMillis()
                                 update(slot, g)
                                 // An interval of NaN ("NaN" is a number) would be 0: a % by zero for a clock, a busy loop otherwise.
-                                val wait = (g.every * 1000).toLong().coerceAtLeast(100)
+                                val wait = (g.every * 1000).toLong().coerceAtLeast(if (terminalMode() && g.kind != "clock") SLOW_POLL else 100)
                                 // Clocks tick on the second (or minute) boundary so displays change in step;
                                 // other intervals count from the start of the update, however long it took.
                                 val target = if (g.kind == "clock") wait - System.currentTimeMillis() % wait else (start + wait - System.currentTimeMillis()).coerceAtLeast(0)
@@ -836,6 +841,9 @@ class WidgetInstance(
 
     companion object {
         private const val SLOW_DRAW_NANOS = 4_000_000.0
+
+        /** The shortest poll in terminal mode: ten minutes. */
+        private const val SLOW_POLL = 10 * 60 * 1000L
 
         /** [parkedStart] while the frame clock runs. */
         private const val RUNNING = Long.MIN_VALUE

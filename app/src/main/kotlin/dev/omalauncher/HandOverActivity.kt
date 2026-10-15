@@ -15,7 +15,8 @@ class HandOverActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val caller = callingPackage
-        if (caller == null || caller !in runtime.presence.builds()) return finish()
+        // Its package is shown too: a label is the app's to choose, its package is unique on the phone.
+        if (caller == null || !caller.startsWith("dev.omalauncher") || caller !in runtime.presence.builds()) return finish()
         // Nothing to hand over: the caller can go ahead.
         if (!runtime.presence.isOnline) {
             setResult(RESULT_OK)
@@ -23,9 +24,11 @@ class HandOverActivity : ComponentActivity() {
         }
         val from = runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(caller, 0)).toString() }.getOrDefault(caller)
         val here = applicationInfo.loadLabel(packageManager).toString()
+        Motion.follow(this)
         setContent {
             HandOverDialog(
                 from = from,
+                fromPackage = caller,
                 here = here,
                 onHandOver = {
                     setResult(RESULT_OK)

@@ -14,8 +14,9 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 
 /**
- * How long the launcher's animations take. Terminal mode (see [Runtime.terminalMode]) makes it 0: every animation
- * jumps to its end and no frames are drawn for it. Otherwise it follows Android's animator duration scale.
+ * How long the launcher's animations take, in every activity's Compose content. Terminal mode (see
+ * [Runtime.terminalMode]) makes it 0: every animation jumps to its end and no frames are drawn for it. Otherwise it
+ * follows Android's animator duration scale.
  */
 object Motion : MotionDurationScale {
     @Volatile var off = false
@@ -26,9 +27,11 @@ object Motion : MotionDurationScale {
 
     /**
      * Gives this activity's Compose content a recomposer that reads [Motion], in place of the window's default one,
-     * which brings its own scale. Like that one, it draws no frames while the activity is stopped. Before setContent.
+     * which brings its own scale. Like that one, it draws no frames while the activity is stopped. Before setContent;
+     * once a window has a recomposer (a second setContent), it keeps it.
      */
     fun follow(activity: ComponentActivity) {
+        if (activity.window.decorView.compositionContext != null) return
         system = Settings.Global.getFloat(activity.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
         val ui = AndroidUiDispatcher.CurrentThread
         val clock = PausableMonotonicFrameClock(ui[MonotonicFrameClock]!!)

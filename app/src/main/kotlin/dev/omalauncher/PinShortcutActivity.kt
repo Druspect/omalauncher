@@ -27,6 +27,7 @@ class PinShortcutActivity : ComponentActivity() {
             return
         }
         val catalog = runtime.androidApps
+        Motion.follow(this)
         setContent {
             PinShortcutDialog(
                 label = shortcutLabel(info),
