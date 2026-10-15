@@ -6,10 +6,45 @@ Dates are when the build was uploaded to Play.
 
 ## Unreleased
 
+- GPU acceleration for Linux apps on Adreno GPUs, like Snapdragon phones (Settings › linux).
+
+## 0.7.2 (versionCode 14) – 2026-10-14
+
+- Text files open in the launcher's own touch-first editor, in the Omarchy theme,
+  which is also Linux's `$EDITOR`: Android's selection and keyboard, line numbers,
+  find, word wrap and a key row above the keyboard. Each file gets its own Recents
+  card, and `git commit` waits until you close the message.
+- Files is an Omarchy-style panel with its own icon, and can create a new file.
+- Settings open in their own window with a Recents card, and come back as you left
+  them after going home or to a terminal mid-install. The launcher's own screens
+  open and close without animations.
+- Terminals no longer flicker when the soft keyboard opens or closes.
+- New coding agents from Omarchy's list: Oh My Pi, Ori, Muse Code and Kimi.
+- Linux no longer installs lazygit, and fastfetch stays out of the drawer.
+- Checking for system updates in settings records the check time again.
+- The widget store's refresh button spins while it reloads.
+
+## 0.7.1 (versionCode 13) – 2026-10-13
+
 - Websites installed from a browser (Install app, or Add to home screen) show up
   on the home screen and in the app drawer, like other apps' shortcuts to home.
   Browsers didn't offer to install them before.
-- GPU acceleration for Linux apps on Adreno GPUs, like Snapdragon phones (Settings › linux).
+- Long-pressing an Android app in the drawer, the recent apps or on home lists its
+  shortcuts, such as Maps' "Navigate home", a chat or Chrome's incognito tab. Tap one
+  to open it, or its [+] to put it on the home screen.
+- Apps that change their own icon, like Duolingo or X, no longer leave a blank
+  tile on the home screen that won't open; it shows the new icon and opens the app.
+- The now playing widget's play button works again when it seemed dead: after a
+  long pause (Spotify) it opens the app so playback resumes, and for a player that
+  can't play in the background (YouTube without Premium) it opens the app. Tapping
+  the tile opens the app again on Android 14 and later.
+- After you change the phone's language, app names, home tiles and widget dates
+  follow it.
+- Widgets that only animate some of the time, like a backdrop drawn while music
+  plays, stop redrawing while they're still.
+- The koi in the koi pond widget turn in arcs instead of flipping round.
+- Keeping the theme setup suggests (Tokyo Night) no longer loses it, and its wallpaper,
+  the next time the launcher starts.
 
 ## 0.7.0 (versionCode 12) – 2026-10-13
 

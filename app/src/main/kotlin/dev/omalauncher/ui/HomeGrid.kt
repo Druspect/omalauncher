@@ -57,6 +57,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toOffset
@@ -797,22 +798,25 @@ private fun TiledPage(
                     )
                 }
             }
-            // Action bar above the tile, or below it when the tile is at the top.
-            val barAbove = r.top > with(density) { 56.dp.roundToPx() }
             if (!arrange.holding) {
-                // Lined up with the tile's left edge, pulled in by however wide the bar turned out when that would
-                // run off the page: a lone "remove" for an app at the edge stays next to it.
-                val y = with(density) { if (barAbove) r.top - 48.dp.roundToPx() else r.bottom + 8.dp.roundToPx() }
-                fun at(width: Int) = IntOffset(r.left.coerceAtMost(pageWidth - width).coerceAtLeast(0), y)
+                // Above the tile, or below it when there's no room for it there: as tall as it turned out, since an
+                // app's shortcuts stack above its bar. Lined up with the tile's left edge, pulled in by however wide
+                // the bar turned out when that would run past the grid's edge, which keeps the gap tiles keep from the
+                // screen: a lone "remove" for an app at the edge stays next to it.
+                val barGap = with(density) { 8.dp.roundToPx() }
+                fun at(size: IntSize): IntOffset {
+                    val above = r.top - size.height - barGap
+                    return IntOffset(r.left.coerceAtMost(pageWidth - grid.pad.right - size.width).coerceAtLeast(grid.pad.left), if (above >= 0) above else r.bottom + barGap)
+                }
                 DisposableEffect(Unit) { onDispose { arrange.bar = null } }
                 Box(
                     Modifier
                         .zIndex(3f)
                         .layout { measurable, constraints ->
                             val bar = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
-                            layout(bar.width, bar.height) { bar.place(at(bar.width)) }
+                            layout(bar.width, bar.height) { bar.place(at(IntSize(bar.width, bar.height))) }
                         }
-                        .onSizeChanged { arrange.bar = IntRect(at(it.width), it) },
+                        .onSizeChanged { arrange.bar = IntRect(at(it), it) },
                 ) { actions(sel) }
             }
         }
