@@ -20,6 +20,10 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <!-- The other omalauncher builds, to find the one with Linux online (Presence.kt). -->
+        <intent>
+            <action android:name="dev.omalauncher.action.HAND_OVER_LINUX" />
+        </intent>
         <!-- Lets SpeechRecognizer find the phone's recognition service. -->
         <intent>
             <action android:name="android.speech.RecognitionService" />
@@ -62,6 +66,21 @@
         <!-- Asks before an app pins a shortcut to home (ShortcutManager.requestPinShortcut); browsers only install
              websites when the home app has this. Its own task, so the system's CLEAR_TASK never touches home's,
              gone once left. Not exported: the system starts it, and other apps have no reason to. -->
+        <!-- Another omalauncher build asks this one to stop Linux so it can run its own (Presence.kt). Exported for
+             that build, which can't share a signature with this one; only the user's tap stops anything. -->
+        <activity
+            android:name=".HandOverActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|uiMode"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.Omalauncher.Dialog">
+            <intent-filter>
+                <action android:name="dev.omalauncher.action.HAND_OVER_LINUX" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
         <activity
             android:name=".PinShortcutActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|density|uiMode"

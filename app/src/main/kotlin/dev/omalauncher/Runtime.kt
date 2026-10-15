@@ -59,6 +59,7 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
@@ -101,6 +102,14 @@ class Runtime(
     val widgets = WidgetEngine(context, proot, this)
     val updates = SystemUpdates(proot, pacman, agents)
     val gpu = Gpu(context, proot)
+    val presence = Presence(context)
+
+    /** Another build (see [Presence]) has Linux online, so this one waits; null once it runs Linux itself, or can. */
+    var linuxElsewhere by mutableStateOf<String?>(null)
+        private set
+
+    /** What [runLinux] was asked to do while [linuxElsewhere] had Linux; it runs once that hands it over. */
+    private var waiting: (suspend () -> Unit)? = null
 
     /** The launcher's own provided files (default widgets, their docs); see [Provisioner]. */
     private val launcherFiles = Provisioner(proot.filesDir, LauncherData.LAUNCHER_MANIFEST, listOf(widgets::managed, style::managed))
@@ -129,6 +138,9 @@ class Runtime(
     private var prepared = false
 
     private val prefs = context.getSharedPreferences("launcher", Context.MODE_PRIVATE)
+
+    /** Asked [linuxElsewhere] to hand Linux over; once per process, and not right after this one handed it away. */
+    var askedForLinux = prefs.getBoolean(HANDED_OVER, false).also { if (it) prefs.edit().remove(HANDED_OVER).apply() }
 
     /**
      * The first-run screen is done: from then on the home screen shows, with
@@ -223,6 +235,14 @@ class Runtime(
     /** Runs [work] with the foreground service up, so it goes on outside the app; then starts Linux if it's installed. */
     private fun runLinux(work: suspend () -> Unit) {
         if (linuxJob?.isActive == true) return
+        // A claim nobody can be found holding (a build too old to hand over) doesn't keep Linux off.
+        if (!presence.claim()) {
+            presence.holder()?.let {
+                linuxElsewhere = it
+                waiting = work
+                return
+            }
+        }
         linuxJob =
             scope.launch {
                 setService(true)
@@ -255,12 +275,55 @@ class Runtime(
                     agents.load()
                 }
                 gpu.turnOff()
+                presence.release()
                 linuxApps.clear()
                 linuxIcons.clear()
                 linuxMasks.clear()
                 linuxIconNames.clear()
                 setService(false)
             }
+    }
+
+    /**
+     * [linuxElsewhere] answered: if it handed Linux over, this build takes it, as soon as the name is free
+     * (that build's process is on its way out).
+     */
+    fun handedOver(ok: Boolean) {
+        val work = waiting ?: return
+        if (!ok) return
+        scope.launch {
+            val claimed =
+                withContext(Dispatchers.IO) {
+                    repeat(100) {
+                        if (presence.claim()) return@withContext true
+                        delay(50)
+                    }
+                    false
+                }
+            if (!claimed) {
+                Log.w(TAG, "$linuxElsewhere handed Linux over but still holds it")
+                return@launch
+            }
+            linuxElsewhere = null
+            waiting = null
+            runLinux(work)
+        }
+    }
+
+    /**
+     * Stops Linux so another build can run it (HandOverActivity). The process ends too: the Wayland server and
+     * bridges only stop with it, and its end frees the claim for certain. Home comes back without Linux.
+     */
+    fun handOver() {
+        prefs.edit().putBoolean(HANDED_OVER, true).commit()
+        scope.launch {
+            linux = false
+            audio.stop()
+            withContext(Dispatchers.IO) { proot.killAll() }
+            setService(false)
+            presence.release()
+            android.os.Process.killProcess(android.os.Process.myPid())
+        }
     }
 
     /** The foreground service keeps the process, and with it Linux, alive; only while Linux is installed or installing. */
@@ -588,5 +651,6 @@ class Runtime(
     companion object {
         private const val TAG = "runtime"
         private const val SETUP_DONE = "setup_done"
+        private const val HANDED_OVER = "linux_handed_over"
     }
 }

@@ -6,10 +6,12 @@ import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.view.KeyEvent
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.withResumed
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.LaunchedEffect
@@ -44,6 +46,35 @@ class MainActivity : ComponentActivity() {
             snapshotFlow { runtime.launcherReady }.first { it }
             withResumed { requestHomeRole() }
         }
+        lifecycleScope.launch {
+            val holder = snapshotFlow { runtime.linuxElsewhere }.filterNotNull().first()
+            withResumed { askForLinux(holder) }
+        }
+    }
+
+    /** Another build has Linux online: asks it, in its own dialog over this screen, to hand Linux over. */
+    private fun askForLinux(holder: String) {
+        if (runtime.askedForLinux) return
+        runtime.askedForLinux = true
+        val ask = Intent(Presence.ACTION_HAND_OVER).setPackage(holder)
+        @Suppress("DEPRECATION")
+        runCatching { startActivityForResult(ask, HAND_OVER) }.onFailure { Log.w("presence", "cannot ask $holder", it) }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: Intent?,
+    ) {
+        @Suppress("DEPRECATION")
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != HAND_OVER) return
+        if (resultCode != RESULT_OK) {
+            val name = runtime.linuxElsewhere?.let { runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(it, 0)) }.getOrNull() }
+            Toast.makeText(this, "Linux stays in ${name ?: "the other omalauncher"}", Toast.LENGTH_SHORT).show()
+        }
+        runtime.handedOver(resultCode == RESULT_OK)
     }
 
     /** Asks once to become the default home app; Android shows its own chooser. */
@@ -151,5 +182,9 @@ class MainActivity : ComponentActivity() {
             else -> return false
         }
         return true
+    }
+
+    private companion object {
+        const val HAND_OVER = 2
     }
 }
