@@ -169,8 +169,8 @@ enum class Corners(
 ) {
     Edge("edge", "edge", 0f),
     Soft("soft", "soft", 0.5f),
+    Sleek("sleek", "sleek", 0.75f),
     Round("round", "round", 1f),
-    Sleek("sleek", "sleek", 1.5f),
     ;
 
     companion object {
