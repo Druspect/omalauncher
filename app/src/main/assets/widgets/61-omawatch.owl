@@ -1,0 +1,55 @@
+widget "omawatch" {
+  page: 1
+  order: 61
+  size: 3x3
+  minSize: 3x2
+  meta { description: "OmaWatch pairing, theme, and the agent a held mic on the watch will run"; version: "1.3"; license: "MIT"; category: "system"; owl: 7 }
+
+  source bridge = android.watch
+
+  onTap: screen()
+
+  Column {
+    gap: 4
+    Row {
+      align: center
+      Text { text: "OmaWatch"; style: title; color: accent; weight: 1 }
+      Text { text: bridge.pinned ? "paired" : bridge.pending != null ? "confirm" : "offline"; style: label; color: bridge.pinned ? green : bridge.pending != null ? yellow : muted }
+    }
+    Text { text: bridge.line; style: small; color: muted; maxLines: 2 }
+    Spacer { weight: 1 }
+    Text { text: bridge.theme == null ? "theme not sent" : bridge.theme; style: label; color: foreground; maxLines: 1 }
+    Text { text: "voice: ${bridge.voice}"; style: small; color: bridge.voice == "ready" ? green : muted; maxLines: 1 }
+  }
+
+  screen {
+    title: "omawatch bridge"
+    Column {
+      scroll: true
+      gap: 8
+      Text { text: "OmaWatch"; style: huge; color: accent }
+      Text { text: bridge.line; style: title; color: foreground }
+      Text { text: bridge.pinned ? "trusted watch" : bridge.pending != null ? "new watch found — confirm below" : "no trusted watch"; color: muted }
+      Text { text: bridge.fingerprint ?? bridge.pending ?? "fingerprint unavailable"; font: mono; fontSize: 11; color: foreground; maxLines: 3 }
+      Text { text: bridge.theme == null ? "theme: not sent" : "theme: ${bridge.theme}"; color: foreground }
+      Text { text: "voice model: ${bridge.voice}"; color: bridge.voice == "ready" ? green : foreground }
+      Button { text: "bluetooth link"; color: accent; onTap: watch("bluetooth") }
+      if bridge.voice != "ready" {
+        Button { text: "download voice model (Whisper large-v3)"; color: accent; onTap: watch("voice") }
+      }
+      Text { text: "installed agents"; style: label; color: accent }
+      Flow {
+        gap: 8
+        for app in bridge.apps {
+          Text { text: app.name; color: foreground; maxLines: 1 }
+        }
+      }
+      Row {
+        gap: 8
+        Button { text: bridge.pending != null ? "confirm watch" : "send hello"; color: accent; onTap: watch(bridge.pending != null ? "pin" : "hello") }
+        if bridge.pinned { Button { text: "unpair"; color: red; onTap: watch("unpair") } }
+      }
+      Text { text: "The watch receives the launcher's four resolved theme colors. Hold-to-talk starts on the watch only. Its audio comes here over the paired link, is checked against the pinned watch key, transcribed on this phone by whisper.cpp, deleted, and the text runs the agent selected in the prompt bar. Nothing goes to a cloud recognizer."; style: small; color: muted }
+    }
+  }
+}

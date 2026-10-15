@@ -34,6 +34,10 @@ android {
             useLegacyPackaging = true
             keepDebugSymbols += listOf("**/libproot.so", "**/libproot-loader.so")
         }
+        // BouncyCastle's data files are for algorithms the watch link never loads.
+        resources {
+            excludes += setOf("META-INF/versions/9/OSGI-INF/MANIFEST.MF", "META-INF/BC*.SF", "META-INF/BC*.DSA", "org/bouncycastle/**")
+        }
     }
 
     // android.util.Log and friends are no-ops in JVM tests instead of throwing.
@@ -72,6 +76,9 @@ dependencies {
     implementation(libs.commons.compress)
     implementation(libs.androidsvg)
     implementation(libs.zxing.core)
+    implementation(libs.play.services.wearable)
+    // RFC 8032 Ed25519 for the OmaWatch link. Android 13 has no Ed25519 KeyFactory.
+    implementation(libs.bouncycastle)
     implementation(project(":owl"))
     testImplementation(libs.junit)
     // android.jar only has stubs of org.json.
