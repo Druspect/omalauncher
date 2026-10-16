@@ -1,0 +1,51 @@
+name: sync-upstream
+
+# Keeps this fork's main aligned with SimonSchubert/omalauncher.
+# The file has to live on main, because scheduled workflows only run there.
+# Each run rebuilds main as upstream plus this file, and skips the push when
+# that tree is already published. Other commits on main stop the job.
+on:
+  schedule:
+    - cron: "23 13 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reset main to upstream and keep this workflow
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cp .github/workflows/sync-upstream.yml /tmp/sync-upstream.yml
+          git remote add upstream https://github.com/SimonSchubert/omalauncher.git
+          git fetch upstream main
+          git fetch origin main
+          extra=$(git diff --name-only upstream/main...origin/main || true)
+          if [ -n "$extra" ] && [ "$extra" != ".github/workflows/sync-upstream.yml" ]; then
+            echo "fork main has commits besides the sync workflow; leaving it alone" >&2
+            printf '%s\n' "$extra" >&2
+            exit 1
+          fi
+          git checkout -B main upstream/main
+          mkdir -p .github/workflows
+          cp /tmp/sync-upstream.yml .github/workflows/sync-upstream.yml
+          git add .github/workflows/sync-upstream.yml
+          if [ "$(git write-tree)" = "$(git rev-parse 'origin/main^{tree}')" ]; then
+            echo "fork main already matches upstream plus this workflow"
+            exit 0
+          fi
+          git commit -m "Sync fork main with upstream."
+          if git merge-base --is-ancestor origin/main HEAD; then
+            git push origin main
+          else
+            git push --force-with-lease=refs/heads/main:refs/remotes/origin/main origin main
+          fi
