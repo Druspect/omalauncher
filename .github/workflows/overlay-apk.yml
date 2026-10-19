@@ -1,0 +1,75 @@
+name: overlay-apk
+
+# Builds a signed APK of this overlay branch: upstream omalauncher plus our thin
+# restitched changes (the "unusable theme name" report; app id/label override).
+# GPU (Turnip/Adreno) and glass tiles now come from upstream, so there is no driver
+# to build here any more. The APK installs next to the store app as
+# dev.omalauncher.adreno ("Omalauncher Adreno") and, signed with the KEYSTORE_*
+# secrets, updates the previous overlay build in place.
+on:
+  push:
+    branches: [druspect/overlay]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Fetch proot
+        run: |
+          sudo apt-get update -q && sudo apt-get install -yq libarchive-tools
+          ndk=$(sed -n 's/^NDK_VERSION=//p' scripts/fetch-proot.sh)
+          [ -d "$ANDROID_HOME/ndk/$ndk" ] || yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk" >/dev/null
+          scripts/fetch-proot.sh
+
+      - name: Write the signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::The KEYSTORE_* secrets aren't set; an unsigned build can't update in place" >&2
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          cat > keystore.properties <<EOF
+          storeFile=$RUNNER_TEMP/upload.jks
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+
+      # Validate before signing: the same unit tests upstream's ci.yml runs, so a
+      # build that fails them is never signed and shipped.
+      - name: Test and build
+        run: |
+          ./gradlew :owl:test :app:testDebugUnitTest :app:assembleRelease \
+            -PapplicationIdSuffix=.adreno \
+            -PappLabel="Omalauncher Adreno" \
+            -PversionSuffix="-overlay+${GITHUB_SHA::7}"
+
+      - name: Checksum
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk omalauncher-overlay.apk
+          sha256sum omalauncher-overlay.apk | tee SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: omalauncher-overlay
+          path: |
+            omalauncher-overlay.apk
+            SHA256SUMS
