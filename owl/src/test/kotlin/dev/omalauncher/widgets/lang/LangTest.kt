@@ -729,6 +729,22 @@ class LangTest {
         }
     }
 
+    @Test fun drawerAppsAndTheirMenu() {
+        val p =
+            Compiler.compile(
+                "widget {\n meta { owl: 11 }\n source d = android.drawer\n" +
+                    " Column { for a in d.apps { Text { text: a.name; onTap: appAction(a.actions[0], a.key) } } }\n" +
+                    " Text { text: d.updates; onTap: appAction(\"uninstall\", d.apps[0].key) }\n Text { text: 1; onTap: workApps(\"toggle\") } }",
+            )
+        assertEquals(listOf("android.drawer"), p.globals.filterIsInstance<Global.Source>().map { it.kind })
+        assertEquals(listOf("read the launcher's apps (names and icons)", "act on an app from the drawer's menu: any of its entries", "act on an app from the drawer's menu: uninstall"), p.commands)
+        assertTrue(compileError("widget {\n meta { owl: 11 }\n Text { text: 1; onTap: appAction(\"delete\", \"a:x\") } }").contains("appAction takes pin, info"))
+        assertTrue(compileError("widget {\n meta { owl: 11 }\n Text { text: 1; onTap: workApps(\"off\") } }").contains("workApps takes pause, resume, toggle"))
+        for (old in listOf("source d = android.drawer\n Text { text: 1 }", "Text { text: 1; onTap: appAction(\"pin\", \"l:foot\") }", "Text { text: 1; onTap: workApps(\"pause\") }")) {
+            assertTrue(compileError("widget {\n meta { owl: 10 }\n $old }").contains("needs owl 11"))
+        }
+    }
+
     @Test fun chunkMakesRows() {
         val owl = "meta { owl: 11 }"
         assertEquals("[[1, 2], [3, 4], [5]]", text("chunk([1, 2, 3, 4, 5], 2)", owl))
@@ -739,6 +755,63 @@ class LangTest {
         // Rows with their place, as a hand-built grid keys them.
         assertEquals("r0:a,b r1:c", text("join(chunk([\"a\", \"b\", \"c\"], 2).map((row, i) => \"r\" + i + \":\" + join(row, \",\")), \" \")", owl))
         assertTrue(compileError("widget {\n meta { owl: 10 }\n let r = chunk([1], 1)\n Text { text: 1 } }").contains("needs owl 11"))
+    }
+
+    @Test fun rankAsTheBarRanks() {
+        val apps =
+            "meta { owl: 11 }\n let apps = [{name: \"Calendar\", score: 0}, {name: \"Calculator\", score: 5}, {name: \"Café\", score: 0}, " +
+                "{name: \"WhatsApp\", alias: \"WhatsApp work\", score: 0}, {name: \"Files\"}]"
+        assertEquals("Calculator,Calendar", text("join(rank(apps, \"cal\").map(a => a.name), \",\")", apps))
+        assertEquals("Café", text("join(rank(apps, \"cafe\").map(a => a.name), \",\")", apps))
+        assertEquals("WhatsApp", text("join(rank(apps, \"work\").map(a => a.name), \",\")", apps))
+        assertEquals("0", text("len(rank(apps, \" \"))", apps))
+        assertEquals("Visual Studio Code", text("join(rank([\"Claude Code\", \"Visual Studio Code\"], \"vsc\"), \",\")", apps))
+        // Enter opens at initials or better, by name or alias, for one line of two words at most.
+        val enter = listOf("Files" to "fi", "Visual Studio Code" to "vsc", "Files" to "il", "Visual Studio Code" to "vis stu code", "Visual Studio Code" to "vis\\ncode")
+        assertEquals("true,true,false,false,false", enter.joinToString(",") { (n, q) -> text("strongMatch(\"$n\", \"$q\")", "meta { owl: 11 }") })
+        assertEquals("true", text("strongMatch(apps[3], \"work\")", apps))
+        for (old in listOf("let r = rank([\"a\"], \"a\")\n Text { text: 1 }", "let s = strongMatch(\"a\", \"a\")\n Text { text: 1 }", "Column { lazy: true }", "Grid { lazy: true }")) {
+            assertTrue(compileError("widget {\n meta { owl: 10 }\n $old }").contains("needs owl 11"))
+        }
+    }
+
+    @Test fun panelsAreViewsAGestureOpens() {
+        val p = Compiler.compile("panel \"apps\" {\n meta { owl: 11 }\n state sent = \"\"\n onSubmit: sent = value\n Text { text: query; onTap: close() } }")
+        assertEquals(OwlKind.Panel, p.kind)
+        assertEquals("apps", p.name)
+        assertTrue(p.root.isEmpty())
+        assertEquals(1, p.screen!!.size)
+        assertNotNull(p.onSubmit)
+        assertEquals(OwlKind.Panel, OwlKind.of("// a drawer of my own\npanel \"x\" { }"))
+
+        assertTrue(compileError("panel {\n meta { owl: 10 }\n Text { text: 1 } }").contains("needs owl 11"))
+        assertTrue(compileError("panel {\n meta { owl: 11 }\n size: 2x2\n Text { text: 1 } }").contains("a panel only takes enter"))
+        assertTrue(compileError("panel {\n meta { owl: 11 }\n onTap: close()\n Text { text: 1 } }").contains("only onSubmit"))
+        // Arrow and Tab keys from the bar: at the panel's top, never on a node.
+        val keys = Compiler.compile("panel {\n meta { owl: 11 }\n state pick = 0\n onKey: pick = value == \"up\" ? pick + 1 : pick - 1\n Text { text: pick } }")
+        assertNotNull(keys.onKey)
+        assertTrue(compileError("panel {\n meta { owl: 11 }\n Text { text: 1; onKey: close() } }").contains("onKey goes at the top of a panel"))
+        assertTrue(compileError("panel {\n meta { owl: 11 }\n screen { Text { text: 1 } } }").contains("a panel is a screen already"))
+        assertTrue(compileError("app {\n meta { owl: 11 }\n Text { text: query } }").contains("only a panel has"))
+        assertTrue(compileError("widget {\n meta { owl: 11 }\n Text { text: query } }").contains("only a panel has"))
+        // A panel's own state named query wins, as declarations shadow the tile's names.
+        Compiler.compile("panel {\n meta { owl: 11 }\n state query = 1\n Text { text: query } }")
+    }
+
+    @Test fun drawerCellsAndMenus() {
+        val p =
+            Compiler.compile(
+                "panel {\n meta { owl: 11 }\n state menu = []\n enter: query == \"\" ? \"\" : \"⏎ ask\"\n" +
+                    " Column { lazy: true; reverse: true; for i in range(3) { Image { src: \"icon:l:foot\"; label: \"foot\"; onLongPress: menu = shortcuts(\"a:x\") } } } }",
+            )
+        assertNotNull(p.enter)
+        assertEquals(listOf("read an app's shortcuts (the actions its long-press menu offers)"), p.commands)
+        assertTrue(compileError("panel {\n meta { owl: 11 }\n Text { text: 1; onTap: shortcuts(\"a:x\") } }").contains("puts an app's shortcuts into a state"))
+        assertTrue(compileError("panel {\n meta { owl: 11 }\n Column { reverse: true } }").contains("add lazy: true"))
+        assertTrue(compileError("panel {\n meta { owl: 11 }\n size: 2x2\n Text { text: 1 } }").contains("a panel only takes enter"))
+        for (old in listOf("state s = []\n Text { text: 1; onTap: s = shortcuts(\"a:x\") }", "Image { src: \"x.png\"; label: \"x\" }", "Text { text: 1; minLines: 2 }", "Column { lazy: true; reverse: true }")) {
+            assertTrue(compileError("widget {\n meta { owl: 10 }\n $old }").contains("needs owl 11"))
+        }
     }
 
     @Test fun appsGoBackALevelWhileBackHolds() {
@@ -869,7 +942,7 @@ class LangTest {
         assertTrue(compileError("gadget {\n Text { text: 1 } }").contains("an owl file starts with"))
         assertEquals(OwlKind.App, OwlKind.of("// notes\n/* a\n b */ app \"x\" { Text { text: \"unterminated } }"))
         assertEquals(OwlKind.App, OwlKind.of("  app{"))
-        assertEquals(OwlKind.Widget, OwlKind.of("panel {"))
+        assertEquals(OwlKind.Widget, OwlKind.of("sheet {"))
         assertEquals(OwlKind.Widget, OwlKind.of("application {"))
     }
 

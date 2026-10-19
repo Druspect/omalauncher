@@ -1,8 +1,8 @@
 package dev.omalauncher.ui
 
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.graphics.graphicsLayer
 import kotlinx.coroutines.launch
@@ -60,6 +60,7 @@ import dev.omalauncher.widgets.render.Backdrop
 import dev.omalauncher.widgets.render.LocalBackdrop
 import dev.omalauncher.widgets.render.LocalHomeCovered
 import dev.omalauncher.widgets.render.LocalInputFocus
+import dev.omalauncher.widgets.render.LocalMenuOpened
 
 @Composable
 fun LauncherRoot(
@@ -90,6 +91,7 @@ private fun DesktopScreen(
             state.shared != null -> state.shared = null
             state.sharing != null -> state.sharing = null
             runtime.widgets.openScreen != null -> runtime.widgets.openScreen = null
+            state.pulled != null -> state.closePull()
             else -> state.close()
         }
     }
@@ -124,8 +126,6 @@ private fun DesktopScreen(
     val panelShown by remember(state) { derivedStateOf { state.drawer.value > 0.01f } }
     // Closing it forgets the search, like stock drawers: the next swipe up shows every app, not the old results.
     LaunchedEffect(panelShown) { if (!panelShown) state.query = "" }
-    val search by remember(runtime, state) { derivedStateOf { searchApps(runtime, state.query) } }
-    val highlighted = search.highlighted(state.picked)
 
     fun launch(hit: AppHit) {
         state.query = ""
@@ -173,6 +173,21 @@ private fun DesktopScreen(
             )
         }
 
+    LaunchedEffect(handlers) { runtime.widgets.appHandlers = handlers }
+
+    // The drawer is a panel: the one picked for swiping up, drawer.owl, or the stock one, whichever runs first.
+    val drawer = runtime.upPanel()
+    // Panels live while they show, so their sources keep up; a panel's close() slides it away.
+    val shownPanels by remember(state, drawer) {
+        derivedStateOf { setOfNotNull(drawer?.takeIf { state.drawer.value > 0f }, state.pulled?.takeIf { state.pull.value > 0f }) }
+    }
+    LaunchedEffect(shownPanels) { runtime.widgets.shownPanels = shownPanels }
+    LaunchedEffect(state) {
+        runtime.widgets.panelCloses.collect { name ->
+            if (name == state.pulled) state.closePull() else if (name == runtime.upPanel()) state.close()
+        }
+    }
+
     if (panelShown) {
         // Near-opaque like stock drawers: home widgets bleeding through made icons hard to read.
         Box(
@@ -181,8 +196,7 @@ private fun DesktopScreen(
                 .graphicsLayer { alpha = state.drawer.value.coerceAtMost(1f) }
                 .background(Palette.background.copy(alpha = 0.97f))
                 .clickable { state.close() }
-                .drawerSwipe(state)
-                .swipeTabs(runtime, state),
+                .drawerSwipe(state),
         )
     }
     // The bar and the panel above it; the keyboard lifts both. Nothing here takes touches while the panel is closed,
@@ -201,22 +215,16 @@ private fun DesktopScreen(
                 .then(if (side != null) Modifier.wrapContentWidth().widthIn(max = ReadingWidth) else Modifier),
         ) {
             Box(Modifier.weight(1f).fillMaxWidth()) {
-                if (panelShown) {
-                    AppPanel(
-                        runtime = runtime,
-                        state = state,
-                        search = search,
-                        highlighted = highlighted,
-                        handlers = handlers,
-                        onAsk = { state.promptRequest = PromptRequest.Send },
-                        onSettings = { state.show() },
-                        modifier =
-                            Modifier.graphicsLayer {
-                                val progress = state.drawer.value
-                                alpha = progress.coerceAtMost(1f)
-                                translationY = (1f - progress) * size.height * 0.6f
-                            },
-                    )
+                val slide =
+                    Modifier.graphicsLayer {
+                        val progress = state.drawer.value
+                        alpha = progress.coerceAtMost(1f)
+                        translationY = (1f - progress) * size.height * 0.6f
+                    }
+                // Long-pressing an app opens its menu: the keyboard goes then, once, and stays down.
+                val release = remember(state) { { state.promptRequest = PromptRequest.Release } }
+                if (panelShown && drawer != null) {
+                    CompositionLocalProvider(LocalMenuOpened provides release) { UpPanel(runtime, state, drawer, slide) }
                 }
             }
             // Hidden while a tile types: it would sit on the keyboard, over the tile. They slide with the tile pages,
@@ -227,15 +235,17 @@ private fun DesktopScreen(
                     // Swiping up from either does what it does on home, as from the dock on stock launchers.
                     if (LauncherStyle.recentApps && !panelShown) RecentStrip(runtime, handlers, Modifier.homeSwipe(runtime, state))
                     // Insets itself by the grid gap, so it lines up with the tiles and the gap still takes taps.
-                    PromptBar(runtime, state, search = search, highlighted = highlighted, onLaunch = handlers.launch, modifier = Modifier.homeSwipe(runtime, state))
+                    PromptBar(runtime, state, modifier = Modifier.homeSwipe(runtime, state))
                 }
             }
         }
     }
 
+    // Over home and the bar, as it comes down from the top.
+    PulledPanel(runtime, state)
     // Full-screen panels draw over the bar.
     ThemesOverlay(runtime, state)
-    FileErrors(listOf(StyleStore.FILE to runtime.style.errors, HomeStore.FILE to runtime.widgets.home.errors))
+    FileErrors(listOf(StyleStore.FILE to runtime.style.errors, HomeStore.FILE to runtime.widgets.home.errors) + runtime.gestureProblems())
 }
 
 /**

@@ -114,10 +114,18 @@ internal val SINCE =
         listOf("android.agents", "android.recent", "open", "ask", "Popup", "Input.underline").associateWith { 10 } +
         // owl 10: fonts of the widget's own, and Canvas text styled like a Text.
         listOf(FONT_FILE, CANVAS_TEXT_STYLE).associateWith { 10 } +
-        // owl 11: long lists built as they scroll into view, and an app that hides the status bar.
-        listOf("Column.lazy", "Grid.lazy", "Column.reverse", "Grid.reverse", "Image.label", "Text.minLines", "chunk", APP_STATUS_BAR).associateWith { 11 }
+        // owl 11: panels, files a swipe on home opens (the app drawer is one), with the prompt bar's text; the drawer's
+        // apps and what their long-press menu does; long lists built as they scroll into view; the bar's search ranking;
+        // an app that hides the status bar.
+        listOf(PANEL_FILE, QUERY, "onKey", "android.drawer", "appAction", "workApps", "shortcuts", APP_STATUS_BAR).associateWith { 11 } +
+        listOf("Column.lazy", "Grid.lazy", "Column.reverse", "Grid.reverse", "Image.label", "Text.minLines", "rank", "strongMatch", "chunk").associateWith { 11 }
 
 internal const val FACE_FILE = "face \"…\" { }"
+
+internal const val PANEL_FILE = "panel \"…\" { }"
+
+/** A panel's read-only name for the prompt bar's text. */
+internal const val QUERY = "query"
 
 internal const val GRADIENT_BACKGROUND = "a gradient background"
 
@@ -155,6 +163,8 @@ internal val HANDLER_PARAMS =
         "onChange" to listOf("value"),
         "onSubmit" to listOf("value"),
         "onDismiss" to emptyList(),
+        // A panel's, at its top: a key pressed in the prompt bar while it's open.
+        "onKey" to listOf("value"),
     )
 
 /** Handlers only some nodes have. */
@@ -164,7 +174,7 @@ internal val HANDLER_KINDS = mapOf("onChange" to setOf("Slider", "Input"), "onSu
 internal val TRIGGER_PARAMS = mapOf("on" to listOf("value", "old"))
 
 /** Data from the phone and the launcher; device is fixed, system is polled, the rest update as they change. */
-internal val ANDROID = setOf("battery", "device", "media", "notifications", "volume", "system", "alarm", "modes", "apps", "agents", "recent")
+internal val ANDROID = setOf("battery", "device", "media", "notifications", "volume", "system", "alarm", "modes", "apps", "agents", "recent", "drawer")
 
 /** The words an action's first value may be, when it's written out; [numbers] also allows a number. */
 internal class Words(
@@ -181,6 +191,8 @@ internal val ACTION_WORDS =
         // true and false also turn it on and off.
         "torch" to setOf("on", "off", "toggle").let { Words(it, "torch takes true, false, ${it.joinToString()}") },
         "notification" to setOf("open", "dismiss").let { Words(it, "notification takes ${it.joinToString()} and a notification's key") },
+        "appAction" to setOf("pin", "info", "uninstall", "remove", "edit", "share").let { Words(it, "appAction takes ${it.joinToString()} and an app's key") },
+        "workApps" to setOf("pause", "resume", "toggle").let { Words(it, "workApps takes ${it.joinToString()}") },
     )
 
 /** The tile's size, readable anywhere a declaration of the same name doesn't shadow it. */

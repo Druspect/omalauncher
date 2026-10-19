@@ -123,6 +123,13 @@ val LocalHomeCovered = staticCompositionLocalOf<() -> Boolean> { { false } }
 /** Whether an Input's `focus` may take focus: only on a screen the user opened, never on a tile or in a preview. */
 val LocalInputFocus = staticCompositionLocalOf { false }
 
+/**
+ * Told when a Popup opens: in the drawer's place, the prompt bar lets go of the keyboard for good then. A menu's window
+ * takes focus, which hides the keyboard; without this it would come back as the menu closes, only to go again as the
+ * drawer does.
+ */
+val LocalMenuOpened = staticCompositionLocalOf<() -> Unit> { {} }
+
 /** On home's tiles: an Input there that takes the keyboard tells these, so its tile lifts above it like a terminal's. */
 val LocalHomeTiles = staticCompositionLocalOf<TerminalTiles?> { null }
 
@@ -167,6 +174,21 @@ fun WidgetContent(
 
 /** Whether nodes here take long presses: in screens, apps and faces, not on a tile, where the home screen has them. */
 val LocalLongPress = staticCompositionLocalOf { false }
+
+/** Whether the Column around these nodes is as wide as its content, so its Texts are as wide as their text (see [columnHugs]). */
+private val LocalHug = staticCompositionLocalOf { false }
+
+/**
+ * Since owl 11 a Column in a Row or Flow without `width`, `weight` or `fill` is as wide as its content: its Texts are
+ * as wide as their text, as they are in the Row, and so is a Column like it inside. Before, its first Text took all
+ * the width the Row had left, and a row of icon-over-label cells showed only the first.
+ */
+internal fun columnHugs(
+    level: Int,
+    sized: Boolean,
+    inRow: Boolean,
+    inHuggingColumn: Boolean,
+) = level >= 11 && !sized && (inRow || inHuggingColumn)
 
 /**
  * Where a node's onLongPress says it took a long press, so the home screen around a face knows not to open its menu
@@ -466,12 +488,13 @@ private fun Element(
             if (p.observe("lazy")?.truthy == true) {
                 LazyNodes(el.children, env, inst, mod, null, arrangement.takeIf { p.has("justify") }, alignment, gap, p.observe("reverse")?.truthy == true)
             } else {
+                val hug = columnHugs(inst.program.level, sized, parent is RowScope, parent is ColumnScope && LocalHug.current)
                 HoldingPopups(el, mod, env, inst) { m, children ->
                     Column(
                         m.then(if (p.observe("scroll")?.truthy == true) Modifier.verticalScroll(rememberScrollState()) else Modifier),
                         verticalArrangement = arrangement,
                         horizontalAlignment = alignment,
-                    ) { Nodes(children, env, inst, this) }
+                    ) { CompositionLocalProvider(LocalHug provides hug) { Nodes(children, env, inst, this) } }
                 }
             }
         }
@@ -506,7 +529,7 @@ private fun Element(
             }
         }
         // Since owl 10 a Text in a Row or Flow is as wide as its text; before, it took the whole width unless sized.
-        "Text" -> TextNode(p, mod, parent is RowScope && inst.program.level >= 10)
+        "Text" -> TextNode(p, mod, parent is RowScope && inst.program.level >= 10 || parent is ColumnScope && LocalHug.current)
         "Button" -> {
             val color = p.color("color") { Palette.accent }
             val radius = p.float("radius", 8f * LauncherStyle.cornerScale)
@@ -971,6 +994,8 @@ private fun PopupNode(
     val above = p.observe("position")?.toString() == "above"
     val position = remember(above) { NextToAnchor(above) }
     val framed = p.has("background") || p.has("border")
+    val opened = LocalMenuOpened.current
+    LaunchedEffect(Unit) { opened() }
     Popup(
         popupPositionProvider = position,
         onDismissRequest = { el.handlers["onDismiss"]?.run(env, emptyList()) },

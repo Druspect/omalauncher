@@ -38,6 +38,12 @@ interface Host {
         slot: Int,
     ) {}
 
+    /** `s = shortcuts(key)` in a handler: the app's shortcuts, as its long-press menu offers them, go into [slot] when they've loaded. */
+    fun shortcutsInto(
+        key: String,
+        slot: Int,
+    ) {}
+
     /**
      * `post(url, body, headers)` in a handler: an HTTP POST, with a map or list [body] sent as JSON. With a
      * [slot] (`x = post(...)`), the answer goes there as `{code, ok, out}` when it arrives.
@@ -324,6 +330,12 @@ class Program(
     val onBack: Action? = null,
     /** An app's `edge`: its view runs on under the navigation bar, which `screenInset` measures. */
     val edge: Boolean = false,
+    /** A panel's `onSubmit`: Enter in the prompt bar while it's open, with what's typed as `value`. */
+    val onSubmit: Action? = null,
+    /** A panel's `onKey`: up, down, tab or shift-tab pressed in the prompt bar while it's open, as `value`. */
+    val onKey: Action? = null,
+    /** A panel's `enter`: what the prompt bar says Enter does while it's open, like "▸ open". */
+    val enter: Ev? = null,
     val onTap: Action? = null,
     val triggers: List<Trigger>,
     /** Shell commands this widget can run, known without running it; for reviewing shared widgets. */

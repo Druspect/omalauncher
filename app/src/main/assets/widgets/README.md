@@ -79,6 +79,7 @@ that read it redraw. Properties are separated by newlines or `;`.
 | `source a = android.apps` | the phone's launchable apps, updated as they're installed, removed and opened: a list of `{key, name, package, component, profile, system, icon, score, last}`. `key` is unique even with the same app in a work profile or a clone, and `androidApp(a.key)` opens that copy; `profile` is `work` or `clone` for those, else null; `icon` goes in `Image { src: a.icon }`. `score` and `last` (Unix seconds, null if never opened) are what the search ranks by: opens fade by half every two weeks, and `androidApp(...)` counts like opening from the drawer (owl 8) |
 | `source ag = android.agents` | the coding agents installed in Linux: `{default, installed}`, each agent `{bin, name, description, command, key, icon}`, updated as they change. `default` is the one the prompt bar asks and `ask(text)` sends to, null with none installed; `open(a.key)` starts one without a prompt, and `icon` is its logo (owl 10) |
 | `source r = android.recent` | the apps in the recent strip above the prompt bar, last opened first: a list of `{key, kind, name, icon, score, last}`, Android and Linux apps, owl apps and shortcuts alike (`kind` is `android`, `linux`, `owl` or `shortcut`). `open(r.key)` opens one, `icon` goes in `Image { src: r.icon }`, and `score` and `last` are as in `android.apps`. Like the strip, it reorders once home is out of sight, not under the finger that tapped (owl 10) |
+| `source d = android.drawer` | the app drawer: `{apps, linux, monochrome, work, updates}`, updated as it changes. `apps` lists every app in the drawer's order, owl apps, Linux apps, shortcuts and Android apps, then the work profile's shortcuts and apps, each `{key, kind, name, label, icon, hasIcon, initials, profile, alias, paused, actions, score, last}`: `kind`, `icon`, `score` and `last` as in `android.recent`, `label` what screen readers should say for it, for an Image's `label` ("WhatsApp work"), `profile` as in `android.apps`, `alias` what search matches besides the name (`WhatsApp work`), `paused` for an app in a paused work profile (the drawer dims those), and `actions` the words of its long-press menu for `appAction(word, a.key)`. `hasIcon` is false while `icon` would draw nothing (no icon, or not loaded yet), when the drawer shows `initials` on a badge instead; `monochrome` on `d` says icons are silhouettes, which the drawer puts on a badge too. `d.linux` is `installed`, `installing` or `missing`; `d.work` is `{paused}` while there's a work profile, else null; `d.updates` is how many system updates wait, the dot on the drawer's settings button. `open(a.key)` opens one (owl 11) |
 | `source m = android.modes` | the phone's modes: `{dnd, saver, ringer, torch}`, updated as they change. `dnd` is Do Not Disturb in any form, `saver` battery saver, `ringer` is `normal`, `vibrate` or `silent`, and `torch` is null on a phone without a flash. Switch the torch with `torch(...)` (owl 7) |
 | `state x = 0` | a value that handlers can change. Add `persist` to keep it across restarts: `state endsAt = 0 persist` |
 | `let x = expr` | a derived value, recomputed only when what it reads changes. It can use sources, state and earlier lets |
@@ -88,7 +89,7 @@ that read it redraw. Properties are separated by newlines or `;`.
 | `asset logo = base64"iVBOR..."` | an embedded image (under 2 MB) for `Image { src: logo }`, or a font for `font: logo` (owl 10, see Fonts), so the widget is one self-contained file |
 | `requires { pacman: ["jq", "curl"] }` | packages the widget's commands need; see Dependencies |
 | `meta { description: "..."; version: "1.0"; license: "MIT"; category: "news" }` | needed to publish to the widget store (see Sharing) |
-| `meta { owl: 11 }` | the language version the widget needs (this launcher has 11; the default is 1). Older launchers say "update the launcher" instead of failing on what they don't know. `Terminal` needs 2, `sprite` 3, triggers, `file`, `Slider`, `Input`, `android.notifications`, `android.volume`, `volume` and `notification` need 4, and `screen { }`, `screen()`, `close()`, `screenWidth` and `screenHeight` need 5, `Input`'s `focus`, `sh()` and `corners` 6, and `android.alarm`, `android.modes`, `torch`, `share` and `haptic` 7, and `app "…" { }` files, `android.apps`, `enc`, `post`, images from the web, `sound` and `screenInset` 8, and `parseTime`, `fmtAgo`, `fmtNum`, `random`, `shuffle`, `hash`, `fmtTime`'s zone and language, `set`, `remove`, `merge`, `reduce`, `scan`, `groupBy`, `toJson`, `capitalize`, `asin`, `acos`, `flatten`'s depth, `on … first`, and `if` and `let` in handlers 9, and `face "…" { }` files, `onLongPress`, Text's `spans`, `fontWeight` and `letterSpacing`, gradient backgrounds, `frost`, fonts of a widget's own and Canvas `text`'s `font`, `fontWeight`, `italic` and `letterSpacing`, `android.agents`, `android.recent`, `open`, `ask`, `Popup` and Input's `underline` 10, and `chunk`, Column's and Grid's `lazy` and `reverse`, Image's `label`, Text's `minLines` and an app's `statusBar` 11; using them without declaring it is an error |
+| `meta { owl: 11 }` | the language version the widget needs (this launcher has 11; the default is 1). Older launchers say "update the launcher" instead of failing on what they don't know. `Terminal` needs 2, `sprite` 3, triggers, `file`, `Slider`, `Input`, `android.notifications`, `android.volume`, `volume` and `notification` need 4, and `screen { }`, `screen()`, `close()`, `screenWidth` and `screenHeight` need 5, `Input`'s `focus`, `sh()` and `corners` 6, and `android.alarm`, `android.modes`, `torch`, `share` and `haptic` 7, and `app "…" { }` files, `android.apps`, `enc`, `post`, images from the web, `sound` and `screenInset` 8, and `parseTime`, `fmtAgo`, `fmtNum`, `random`, `shuffle`, `hash`, `fmtTime`'s zone and language, `set`, `remove`, `merge`, `reduce`, `scan`, `groupBy`, `toJson`, `capitalize`, `asin`, `acos`, `flatten`'s depth, `on … first`, and `if` and `let` in handlers 9, and `face "…" { }` files, `onLongPress`, Text's `spans`, `fontWeight` and `letterSpacing`, gradient backgrounds, `frost`, fonts of a widget's own and Canvas `text`'s `font`, `fontWeight`, `italic` and `letterSpacing`, `android.agents`, `android.recent`, `open`, `ask`, `Popup` and Input's `underline` 10, and `android.drawer`, `appAction`, `workApps`, `rank`, `strongMatch`, `chunk`, Column's and Grid's `lazy`, `panel "…" { }` files with `query`, `enter`, `onSubmit` and `onKey`, `shortcuts`, Column's and Grid's `reverse`, Image's `label`, Text's `minLines`, an app's `statusBar` and a Column in a Row as wide as its content 11; using them without declaring it is an error |
 | `onTap: ...` | runs when the tile (not a button inside it) is tapped |
 | `screen { ... }` | a full-screen view of the widget, opened with `screen()`; see Screens (owl 5) |
 | `every 10s { ... }`, `at t { ... }`, `when c { ... }`, `on x { ... }` | statements that run without a tap; see Triggers |
@@ -198,6 +199,7 @@ second is held back and reported (one that changes what it watches would otherwi
 | parsing | `match(s, regex)` (groups of the first match), `matchAll(s, regex)`, `parseJson(s)`, `toJson(x)` (JSON text), `parseTime(s)` (a date in text as Unix seconds) |
 | chance | `random()`, `random(n)`, `random(a, b)`, `shuffle(list)`, only in handlers and a state's first value; `hash(...)` and `shuffle(list, seed)` anywhere. See Chance |
 | lists | `range(n)` or `range(a, b, step)`, `map filter find any all count sum avg sort sortBy reverse take drop first last indexOf unique`, `chunk(list, n)` (the list in lists of `n`, the last one shorter: rows for a grid with full-width headings, owl 11), `flatten(list, depth)` (depth 1 unless given), `keys values entries get(obj, key, default)`; see Changing lists and maps |
+| search | `rank(list, query)`: what matches `query`, best first, as the prompt bar ranks apps: a whole name, then its start, the starts of its words, its initials, a part of it, and its letters in order, ignoring case and accents. A map matches by its `name` and `alias` and ranks higher with its `score`, so `rank(d.apps, q)` over `android.drawer` finds what the bar finds; a text matches as it is. `strongMatch(a, query)` is true when the bar would open `a` on Enter rather than ask the agent: what's typed names it well (its initials or better, by name or alias) and is one line of two words at most. It follows the bar as the launcher changes, so a drawer of your own keeps opening what the bar opens (owl 11) |
 | colors | theme names `accent foreground background muted surface border red green yellow blue magenta cyan orange` plus `bright_*`, `color0`…`color15`; `#7aa2f7`; `rgb(r, g, b, a)`, `hsl(h, s, l, a)`, `alpha(c, 0.5)`, `mix(a, b, t)` |
 | gradients | `linear(x0, y0, x1, y1, [colors])`, `radial(cx, cy, r, [colors])`: fills in Canvas, and backgrounds (owl 10, see Nodes) |
 
@@ -426,6 +428,10 @@ Since owl 10 a Text in a Row or Flow is as wide as its text, like a Button: labe
 side without a `width`, and a `weight: 1` neighbour takes what's left. Before, it took the whole width unless
 sized, and widgets that declare an older owl keep that. In a Column a Text still takes the whole width.
 
+Since owl 11 that goes for a Column in a Row or Flow too: without `width`, `weight` or `fill` it's as wide as its
+content, and its Texts as wide as their text, so a row of icon-over-label cells sits side by side. Give the cells
+`weight: 1` to share the row evenly; something in one with `fill: width` still stretches it to what the row has left.
+
 `opacity`, `rotation`, `scale`, `offset`, colors and the contents of Canvas and
 Shader apply at draw time. Changing them, even every frame, costs no layout.
 
@@ -466,6 +472,9 @@ after it in its block (and blocks inside them), and needs a name not used for a 
 | `x = run("cmd")` | the same, and puts the command's output into the state `x` when it finishes |
 | `androidApp("org.pkg")` | opens an Android app by package name, or by an `android.apps` key to open that copy in a work profile or clone |
 | `open(r.key)` | opens an app from `android.recent` or an agent from `android.agents` by its `key` (an `android.apps` key works too), as tapping it in the drawer would, so it counts as opened (owl 10) |
+| `appAction("pin", a.key)` | the drawer's long-press menu for an app from `android.drawer`: `pin` (add to home, on the page showing), `info` (Android's app info), `uninstall` (Android asks first), `remove` (a shortcut, or an owl app, whose file goes to `.removed/`), `edit` (the default agent on an owl app's file) and `share` (an owl app's link or QR code). An entry the app's `actions` don't list does nothing. The store's reviewer sees which entries a widget uses (owl 11) |
+| `s = shortcuts(a.key)` | an app's shortcuts, as its long-press menu offers them (New tab, a recent chat), into the state `s` once they've loaded: a list of `{key, name, icon}`, empty for an app with none. `open(s.key)` opens one and `appAction("pin", s.key)` puts it on home (owl 11) |
+| `workApps("toggle")` | pauses the work profile's apps or turns them back on, as the drawer's switch does: `pause`, `resume` or `toggle`. Android may ask for the work PIN, and only lets the default launcher (owl 11) |
 | `ask(text)` | opens a terminal with the default agent answering `text`, as sending it from the prompt bar does; `ask(text, "codex")` asks that installed agent. Without one installed it opens the agents settings. The store's reviewer sees what a widget asks (owl 10) |
 | `copy(text)` | copies text to the Android clipboard |
 | `notify("title", "text")` | posts an Android notification (if the launcher may post them) |
@@ -475,7 +484,7 @@ after it in its block (and blocks inside them), and needs a name not used for a 
 | `haptic()` | a short tap of haptic feedback, if the user has touch feedback on (owl 7) |
 | `sound("https://…/a.mp3")` | plays a sound once, in place of the one playing; `sound("stop")` stops it. Takes a URL, an asset or a file, like `Image`; see Sounds (owl 8) |
 | `torch(true)` | turns the torch on or off; also `torch("toggle")`. Does nothing on a phone without a flash, or while the camera app holds it (owl 7) |
-| `launcher("style")` | opens a launcher screen: `style` (theme, background, home screen, terminal; `themes` too), `agents`, `store`, `drawer` or `linux` (the sheet that installs Linux) |
+| `launcher("style")` | opens a launcher screen: `style` (theme, background, home screen, terminal; `themes` too), `agents`, `store`, `drawer`, `linux` (the sheet that installs Linux) or `settings` (owl 11 launchers; older ones ignore it) |
 | `refresh()` | re-runs this widget's sources now |
 | `screen()` / `close()` | opens the widget's `screen { }` full screen, or closes it (owl 5) |
 | `media("toggle")` | controls what's playing: `toggle`, `play`, `pause`, `next`, `previous`, or `open` (brings up the player app) |
@@ -762,6 +771,61 @@ owl-check doesn't draw the icon; to look at an SVG, render it yourself (for exam
 A widget and an app are separate files and don't share state; a widget that needs a bigger view
 of itself has its own `screen { }`.
 
+## Panels
+
+A panel is a file of its own that a swipe on home opens: swiping up opens the app drawer, above the prompt bar;
+swiping down brings one from the top. The app drawer is a panel too, `drawer.owl`, and the launcher has no other:
+edit it to change the drawer, or read it to see how a whole drawer is put together. Which panel each swipe opens
+is picked in settings › gestures, or in style.toml as the panel's file name (see `defaults.toml`):
+
+```toml
+[gestures]
+swipe-up = "my-drawer.owl"     # drawer.owl by default; "none" leaves the swipe to tapping the bar
+swipe-down = "controls.owl"    # "none" nothing
+```
+
+The drawer is the panel picked for swiping up, else `drawer.owl`, else `.stock-drawer.owl`: the drawer as this
+launcher ships it, which it keeps that way. So a drawer that's removed or stops compiling never locks anyone out of
+their apps (a panel picked for swiping down that's broken opens nothing). Home's banner says which, and settings list it
+with "(has errors)". Compare `drawer.owl` with `.stock-drawer.owl` to see what changed in the stock drawer since. With
+nothing on swipe up, tapping the bar still opens the drawer.
+
+```owl
+panel "my drawer" {
+  meta { owl: 11 }
+  source d = android.drawer
+  let shown = query == "" ? d.apps : rank(d.apps, query)
+  // Enter in the prompt bar: open the best match when it names an app well, as the bar does; a sentence asks the agent.
+  onSubmit: {
+    if len(shown) > 0 && strongMatch(shown[0], value) {
+      open(shown[0].key)
+    } else if trim(value) != "" {
+      ask(value)
+    }
+  }
+  Grid {
+    lazy: true
+    weight: 1
+    columns: 5
+    for a in shown key a.key {
+      Column { align: center; onTap: open(a.key); Image { src: a.icon; size: 52 }; Text { text: a.name; style: small } }
+    }
+  }
+}
+```
+
+The launcher keeps what's around a panel: the backdrop, the panel following the finger as it opens, closing it by
+pulling down past the top of its list (pushing up past the end, for one from the top), a tap on its empty space or
+Back. The drawer sits above the prompt bar, which stays with its microphone and agent menu: `query` is the bar's text
+as it's typed, and `onSubmit` runs on Enter with it as `value`; without `onSubmit`, Enter asks the agent. Only a
+panel opened by swiping up has the bar: in one from the top, `query` stays "" and `onSubmit`, `enter` and `onKey` never run. `enter` is what the bar shows it does, like
+`enter: opens ? "▸ open" : "⏎ ask"` ("" shows nothing). With a keyboard attached, the bar's Up, Down, Tab and
+Shift+Tab go to `onKey` with `value` set to `up`, `down`, `tab` or `shift-tab`, so a panel can move its own
+highlight (drawer.owl keeps a `pick`). Up and Down come only while what's typed is one line; in more, they move
+between its lines. Without `onKey`, the keys stay with the bar and do what they do in any text field. `open(...)` and `appAction(...)` leave the
+panel as opening an app from the drawer does, and `close()` slides it away. Besides `enter`, a panel has no
+properties, title or icon; like an app's, its nodes are the screen's. Give a long list `lazy: true`.
+
 ## Components
 
 ```owl
@@ -1019,7 +1083,7 @@ and the message goes to `.errors/`.
   half-width `3xN`. Set `minSize` to what the layout still fits in. For the whole screen, write a page.
 - Use `weight: 1` to fill leftover space and `fill: width` to stretch across.
 - A `Text` without `width`, `weight` or `fill` takes the full width, except in a `Row` or `Flow` since owl 10,
-  where it's as wide as its text. Before owl 10, give the Texts next to a `weight: 1` one a `width`, or the
+  where it's as wide as its text, or in an unsized Column in one since owl 11. Before owl 10, give the Texts next to a `weight: 1` one a `width`, or the
   weighted one is squeezed to nothing.
 - Look at the example widgets in this folder for patterns: `90-analog-clock` (Canvas),
   `91-focus` (state, buttons and `at`), `92-aurora` (Shader), `93-latency` (stream),
