@@ -24,6 +24,12 @@ android {
         versionCode = 17
         versionName = "0.9.0"
         ndk { abiFilters += "arm64-v8a" }
+        // Overlay build (restitched onto upstream): a self-signed APK that installs next to the
+        // store app and carries the branch+sha it came from.
+        //   -PapplicationIdSuffix=.adreno -PappLabel="Omalauncher Adreno" -PversionSuffix="-overlay+abc1234"
+        providers.gradleProperty("applicationIdSuffix").orNull?.let { applicationIdSuffix = it }
+        providers.gradleProperty("versionSuffix").orNull?.let { versionName = "$versionName$it" }
+        manifestPlaceholders["appLabel"] = providers.gradleProperty("appLabel").getOrElse("Omalauncher")
     }
 
     buildFeatures { buildConfig = true }
