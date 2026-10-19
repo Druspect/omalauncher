@@ -33,6 +33,16 @@ class ThemeDirsTest {
         assertEquals(listOf("mine", "nord"), dirs.scan().map { it.name })
     }
 
+    @Test fun reportsUsableColorsUnderAnUnusableName() {
+        write("user/Bad Name/colors.toml", colors("#000000"))
+        write("user/no-colors/README.md")
+        write("user/fine/colors.toml", colors("#111111"))
+        val reported = mutableListOf<String>()
+        val scanned = dirs.scan { name, _ -> reported.add(name) }
+        assertEquals(listOf("fine"), scanned.map { it.name })
+        assertEquals(listOf("Bad Name"), reported)
+    }
+
     @Test fun userFilesOverrideBuiltInOnes() {
         write("builtin/nord/colors.toml", colors("#2e3440"))
         write("builtin/nord/btop.theme", "builtin")
