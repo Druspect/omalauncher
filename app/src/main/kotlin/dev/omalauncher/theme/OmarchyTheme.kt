@@ -99,11 +99,18 @@ class ThemeDirs(
     val backgrounds: File,
 ) {
     /** Every theme with a colors.toml somewhere. A broken one is passed to [onError] and left out. */
-    fun scan(onError: (String, Throwable) -> Unit = { _, _ -> }): List<OmarchyTheme> =
-        (names(builtIn) + names(user))
+    fun scan(onError: (String, Throwable) -> Unit = { _, _ -> }): List<OmarchyTheme> {
+        // A user directory with a palette but a name the launcher can't use (capitals, spaces, …)
+        // would drop out of the picker without a word; surface it so it can be renamed, not lost.
+        names(user)
+            .filterNot { isValidName(it) }
+            .filter { runCatching { colorsOf(File(user, it)) }.getOrNull() != null }
+            .forEach { onError(it, IllegalStateException("theme name \"$it\" isn't usable; rename it with lowercase letters, digits or . _ + -")) }
+        return (names(builtIn) + names(user))
             .distinct()
             .mapNotNull { name -> runCatching { load(name) }.onFailure { onError(name, it) }.getOrNull() }
             .sortedBy { it.name }
+    }
 
     /** [name]'s theme, or null if no directory of it has a colors.toml. Throws on a colors.toml that can't be read. */
     fun load(name: String): OmarchyTheme? {

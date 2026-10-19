@@ -76,6 +76,10 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
+      # Validate the code before signing an APK from it: the same unit tests ci.yml runs.
+      - name: Test
+        run: ./gradlew :owl:test :app:testDebugUnitTest :owl:owlJar
+
       - name: Fetch proot
         run: |
           sudo apt-get update -q && sudo apt-get install -yq libarchive-tools
