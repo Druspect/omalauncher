@@ -55,6 +55,11 @@ class Compiler private constructor(
 
         private const val MAX_SHAPES = 8
 
+        private val TIME_WORD = Regex("""\btime\b""")
+
+        /** Whether a Shader's code reads its `time` uniform: only then does it need a frame clock. */
+        fun shaderReadsTime(code: String) = TIME_WORD.containsMatchIn(code)
+
         /** A URL whose scheme and host are fixed text, so no value can send it elsewhere. */
         private val FIXED_HOST = Regex("""^https?://[A-Za-z0-9.-]+(:[0-9]+)?/""")
     }
@@ -731,8 +736,11 @@ class Compiler private constructor(
             guest = true
         }
         if (n.type == "Image") body.props.firstOrNull { it.name == "src" }?.let { webFile(it.value, scope, "image") }
-        // Shaders get `time` whether they use it or not.
-        if (n.type == "Shader") animated = true
+        // A shader animates only if its code reads `time`; code that's worked out at run time might.
+        if (n.type == "Shader") {
+            val code = props["code"]?.const
+            if (code == null || shaderReadsTime(code.toString())) animated = true
+        }
         if (kind.children == Children.NONE && body.items.isNotEmpty()) fail("${n.type} can't hold other nodes", body.items[0].pos)
         val children =
             when (kind.children) {

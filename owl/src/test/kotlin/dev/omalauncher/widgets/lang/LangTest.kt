@@ -398,6 +398,13 @@ class LangTest {
         assertTrue(p.animated)
     }
 
+    @Test fun shadersAnimateOnlyWhenTheyReadTime() {
+        fun shader(body: String) = Compiler.compile("widget {\n  Shader { code: \"\"\"$body\"\"\" }\n}").animated
+        assertTrue(shader("half4 main(float2 p) { return half4(sin(time), 0, 0, 1); }"))
+        assertFalse(shader("half4 main(float2 p) { return half4(p.x / size.x, 0, 0, 1); }"))
+        assertFalse(shader("half4 main(float2 p) { float times = 2.0; return half4(times, 0, 0, 1); }"))
+    }
+
     @Test fun spritesAreRunsOfLetters() {
         val s = Sprite.parse(Lst(listOf(Str(".aab."), Str("c..cc"))))
         assertEquals(listOf('a', 'b', 'c', 'c'), s.letters.toList())
