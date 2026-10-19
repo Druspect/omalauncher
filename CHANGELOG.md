@@ -4,6 +4,14 @@ The most important changes in each release. The Play Store notes for a release
 are in `fastlane/metadata/android/en-US/changelogs/<versionCode>.txt`.
 Dates are when the build was uploaded to Play.
 
+## Unreleased
+
+- Home's layout is a file: ~/.config/omalauncher/home/layout.toml lists home's
+  pages in order and where every widget, app and folder sits. Moving things on the
+  phone rewrites it, and an agent (or you) can edit it to move, resize, pin or
+  reorder; problems show on home and in errors.txt next to it. A widget's `page:`,
+  `order:` and `size:` only place it the first time.
+
 ## 0.9.0 (versionCode 17) – 2026-10-18
 
 - Faces: an owl file can be a whole home screen (`face "name" { }`, owl 10), left of

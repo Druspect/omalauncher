@@ -9,6 +9,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -50,6 +51,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import dev.omalauncher.Runtime
 import dev.omalauncher.theme.Style
 import dev.omalauncher.theme.StyleStore
+import dev.omalauncher.widgets.HomeStore
 import dev.omalauncher.widgets.checkSecretsCommand
 import dev.omalauncher.widgets.editWidgetCommand
 import dev.omalauncher.widgets.publishWidgetCommand
@@ -233,31 +235,34 @@ private fun DesktopScreen(
 
     // Full-screen panels draw over the bar.
     ThemesOverlay(runtime, state)
-    StyleErrors(runtime.style)
+    FileErrors(listOf(StyleStore.FILE to runtime.style.errors, HomeStore.FILE to runtime.widgets.home.errors))
 }
 
 /**
- * What style.toml got wrong, at the top over everything, like Hyprland's bar for config errors: errors.txt is out
- * of sight without a terminal. A tap hides the problems shown; new ones show again.
+ * What style.toml or layout.toml got wrong, at the top over everything, like Hyprland's bar for config errors:
+ * errors.txt is out of sight without a terminal. A tap hides the problems shown; new ones show again.
  */
 @Composable
-private fun StyleErrors(style: StyleStore) {
+private fun FileErrors(files: List<Pair<String, List<String>>>) {
     var hidden by remember { mutableStateOf(emptySet<String>()) }
-    val shown = style.errors.filterNot { it in hidden }
+    val shown = files.map { (name, errors) -> name to errors.filterNot { "$name: $it" in hidden } }.filter { it.second.isNotEmpty() }
     if (shown.isEmpty()) return
     Box(Modifier.fillMaxSize().safePadding().padding(PanelGap), contentAlignment = Alignment.TopCenter) {
-        Column(
-            Modifier
-                .widthIn(max = ReadingWidth)
-                .fillMaxWidth()
-                .frame(2.dp, Palette.red, Palette.background)
-                .clickable { hidden = hidden + shown }
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-        ) {
-            BasicText("style.toml: ${if (shown.size == 1) "1 problem" else "${shown.size} problems"}", style = Mono.copy(color = Palette.red))
-            for (line in shown.take(MAX_ERRORS)) BasicText(line, style = Mono.copy(fontSize = TextSize.Small))
-            val more = if (shown.size > MAX_ERRORS) "${shown.size - MAX_ERRORS} more in errors.txt · " else ""
-            BasicText("${more}tap to hide", style = Mono.copy(color = Palette.muted, fontSize = TextSize.Small))
+        Column(Modifier.widthIn(max = ReadingWidth).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(PanelGap)) {
+            for ((name, errors) in shown) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .frame(2.dp, Palette.red, Palette.background)
+                        .clickable { hidden = hidden + errors.map { "$name: $it" } }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                ) {
+                    BasicText("$name: ${if (errors.size == 1) "1 problem" else "${errors.size} problems"}", style = Mono.copy(color = Palette.red))
+                    for (line in errors.take(MAX_ERRORS)) BasicText(line, style = Mono.copy(fontSize = TextSize.Small))
+                    val more = if (errors.size > MAX_ERRORS) "${errors.size - MAX_ERRORS} more in errors.txt · " else ""
+                    BasicText("${more}tap to hide", style = Mono.copy(color = Palette.muted, fontSize = TextSize.Small))
+                }
+            }
         }
     }
 }

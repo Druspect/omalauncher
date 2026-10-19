@@ -102,6 +102,13 @@ class WidgetEngine(
     private val instances = HashMap<String, WidgetInstance>()
     val layout = WidgetLayout(context)
     val shortcuts = Shortcuts(context, layout)
+
+    /** layout.toml, which [layout] and [shortcuts] write to and an agent's edits come in through. */
+    val home =
+        HomeStore(context, this, runtime).also { home ->
+            layout.onSave = home::changed
+            shortcuts.onSave = home::changed
+        }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val services = WidgetServices(context, proot, runtime, scope)
 
@@ -570,6 +577,7 @@ class WidgetEngine(
             // of tiles becomes it again.
             val first = pages.firstOrNull { p -> itemsOn(p).any { !it.isFace } }
             if (first != null && first != 1) arrangePages(pages)
+            home.loaded()
         }
     }
 
@@ -953,6 +961,9 @@ class WidgetEngine(
                 "widget's state or refresh it with `owl-send <file> set <state> <value>` and `owl-send <file> refresh`.\n\n" +
                 "The launcher's look (theme, background, tile spacing and borders, corners, the system bars' colors, the " +
                 "terminals' font) is ~/${StyleStore.GUEST_DIR}/${StyleStore.FILE}; ${StyleStore.DEFAULTS} next to it lists every " +
-                "setting with its default and range. Changes show within a second; ${StyleStore.ERRORS} there says what was ignored and why.\n"
+                "setting with its default and range. Changes show within a second; ${StyleStore.ERRORS} there says what was ignored and why.\n\n" +
+                "Where everything on home is (pages in order, faces, widgets, pinned apps and folders, each tile's cell) is " +
+                "~/${HomeStore.GUEST_DIR}/${HomeStore.FILE}; edit it to move, resize or pin things or reorder pages. " +
+                "\"Home's layout\" in the widgets README explains it.\n"
     }
 }

@@ -23,9 +23,11 @@ have loaded: open it to see whether text fits and the layout works, since you
 can't see the phone. Terminal tiles aren't previewed. Errors also go to
 `.errors/<file>.txt`, and the tile shows them.
 
-Widgets sit on a 6-column grid of roughly square cells (a phone has about 12
-rows), bordered like Omarchy windows and colored by the current Omarchy
-theme. Users move and resize them on the phone.
+Widgets sit on a grid of roughly square cells, 6 columns by default (a phone
+has about 12 rows), bordered like Omarchy windows and colored by the current
+Omarchy theme. Users move and resize them on the phone; where everything is
+lives in ~/.config/omalauncher/home/layout.toml, which you can edit too (see
+Home's layout).
 
 `examples/` holds more widgets (clocks, system stats, processes, shaders, ...).
 They aren't on the home screen; read them for patterns, or move one up into
@@ -33,9 +35,9 @@ this folder to add it.
 
 ```owl
 widget "memory" {
-  page: 1                 // home page, 1-based
-  order: 2                // placement order on the page (lower = placed first)
-  size: 3x4               // preferred size in grid cells: columns x rows
+  page: 1                 // home page it starts on, 1-based; then layout.toml says
+  order: 2                // placement order on the page when first placed (lower = first)
+  size: 3x4               // size in grid cells when first placed: columns x rows
   minSize: 2x3            // users can't shrink it below this
 
   source mem = cmd("free -b | awk '/Mem:/ {print $2, $3}'") every 5s
@@ -850,6 +852,44 @@ widget "shell" {
   is removed or its file changes. When `command` exits, the tile offers a restart;
   use `"btop; exec bash"` to fall back to a shell.
 - `padding: 0` lets the terminal fill the tile's frame.
+
+## Home's layout
+
+`~/.config/omalauncher/home/layout.toml` is home as it is: its pages left to
+right, and where each tile sits. Moving things on the phone rewrites it, and
+home follows your edits within a second. A widget's `page:`, `order:` and
+`size:` only place it the first time; after that, move it here.
+
+```toml
+version = 1
+columns = 6   # the grid the cells are on; home.columns in ../style/style.toml sets the grid
+
+[[page]]                  # left of page 1: a face fills its page
+face = "terminal.owl"
+
+[[page]]                  # page 1, where home opens: the first page of tiles
+tiles = [
+  { widget = "50-memory.owl", x = 0, y = 0, w = 3, h = 4 },
+  { app = "org.mozilla.firefox", x = 3, y = 0 },
+  { folder = "Work", x = 4, y = 0, apps = ["com.slack", "linux:foot"] },
+  { widget = "20-fetch.owl" },   # no x and y: the first free spot, at its size:
+]
+```
+
+- Pages are `[[page]]` blocks in order: move a block to move the page. The
+  first one with tiles is page 1; faces before it are left of it.
+- `x` and `y` count cells from the top left; `w` and `h` are a widget's size.
+  Apps and folders are one cell. A tile off the grid or on top of one before it
+  takes the first free spot instead.
+- `app` is an Android package (`"org.mozilla.firefox"`), an activity with its
+  profile when there's more than one (`"com.android.chrome/.Main@10"`),
+  `"linux:<desktop id>"`, or `"owl:<file>"` for an owl app. Adding one pins it;
+  removing it takes it off home (it stays installed).
+- A widget file left out of the file stays where it is, and a new file goes by
+  its `page:`, `order:` and `size:`. To take a widget off home, move its file to
+  `.removed/`.
+- What couldn't be read is in `errors.txt` next to it, and on the phone's home.
+  A file that doesn't parse changes nothing, and isn't saved over until it's fixed.
 
 ## From scripts
 
