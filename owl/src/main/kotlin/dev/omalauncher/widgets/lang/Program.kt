@@ -307,7 +307,7 @@ class Program(
     val minSize: Pair<Int, Int> = 1 to 1,
     /** A face (`face "…" { }`): it is its home page, the whole screen with no frame, and nothing else goes on it. */
     val isFace: Boolean = false,
-    /** A face's `statusBar`: while false, the status bar hides as the face shows; null keeps it. */
+    /** A face's or an app's `statusBar`: while false, the status bar hides as it shows; null keeps it. */
     val statusBar: Ev? = null,
     val page: Int = 1,
     val order: Int = 0,

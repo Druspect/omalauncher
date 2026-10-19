@@ -21,13 +21,13 @@ internal class DrawOp(
 /** Nodes: their own properties, and what they may contain. */
 internal val KINDS: Map<String, Kind> =
     mapOf(
-        "Column" to Kind(setOf("gap", "align", "justify", "scroll"), Children.UI),
+        "Column" to Kind(setOf("gap", "align", "justify", "scroll", "lazy", "reverse"), Children.UI),
         "Row" to Kind(setOf("gap", "align", "justify", "wrap"), Children.UI),
         "Flow" to Kind(setOf("gap", "align", "justify"), Children.UI),
         "Box" to Kind(setOf("align"), Children.UI),
-        "Grid" to Kind(setOf("columns", "gap"), Children.UI),
-        "Text" to Kind(setOf("text", "style", "color", "fontSize", "bold", "italic", "font", "align", "maxLines", "spans", "fontWeight", "letterSpacing"), Children.NONE),
-        "Image" to Kind(setOf("src", "fit", "tint"), Children.NONE),
+        "Grid" to Kind(setOf("columns", "gap", "lazy", "reverse"), Children.UI),
+        "Text" to Kind(setOf("text", "style", "color", "fontSize", "bold", "italic", "font", "align", "maxLines", "minLines", "spans", "fontWeight", "letterSpacing"), Children.NONE),
+        "Image" to Kind(setOf("src", "fit", "tint", "label"), Children.NONE),
         "Button" to Kind(setOf("text", "color"), Children.NONE),
         "Progress" to Kind(setOf("value", "max", "color", "track"), Children.NONE),
         "Ring" to Kind(setOf("value", "max", "color", "track", "thickness", "start", "sweep"), Children.NONE),
@@ -113,11 +113,15 @@ internal val SINCE =
         // owl 10: the coding agents in Linux and the recent strip's apps, for a face with its own prompt bar.
         listOf("android.agents", "android.recent", "open", "ask", "Popup", "Input.underline").associateWith { 10 } +
         // owl 10: fonts of the widget's own, and Canvas text styled like a Text.
-        listOf(FONT_FILE, CANVAS_TEXT_STYLE).associateWith { 10 }
+        listOf(FONT_FILE, CANVAS_TEXT_STYLE).associateWith { 10 } +
+        // owl 11: long lists built as they scroll into view, and an app that hides the status bar.
+        listOf("Column.lazy", "Grid.lazy", "Column.reverse", "Grid.reverse", "Image.label", "Text.minLines", "chunk", APP_STATUS_BAR).associateWith { 11 }
 
 internal const val FACE_FILE = "face \"…\" { }"
 
 internal const val GRADIENT_BACKGROUND = "a gradient background"
+
+internal const val APP_STATUS_BAR = "an app's statusBar"
 
 internal const val FONT_FILE = "a font of its own"
 

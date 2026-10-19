@@ -729,6 +729,18 @@ class LangTest {
         }
     }
 
+    @Test fun chunkMakesRows() {
+        val owl = "meta { owl: 11 }"
+        assertEquals("[[1, 2], [3, 4], [5]]", text("chunk([1, 2, 3, 4, 5], 2)", owl))
+        assertEquals("[]", text("chunk([], 3)", owl))
+        // Fewer than one per row would never end: it takes one.
+        assertEquals("[[1], [2]]", text("chunk([1, 2], 0)", owl))
+        assertEquals("[[1, 2]]", text("chunk([1, 2], 5)", owl))
+        // Rows with their place, as a hand-built grid keys them.
+        assertEquals("r0:a,b r1:c", text("join(chunk([\"a\", \"b\", \"c\"], 2).map((row, i) => \"r\" + i + \":\" + join(row, \",\")), \" \")", owl))
+        assertTrue(compileError("widget {\n meta { owl: 10 }\n let r = chunk([1], 1)\n Text { text: 1 } }").contains("needs owl 11"))
+    }
+
     @Test fun appsGoBackALevelWhileBackHolds() {
         val app = Compiler.compile("app \"x\" {\n meta { owl: 8 }\n state page = \"\"\n title: page == \"\" ? \"x\" : page\n back: page != \"\"\n onBack: page = \"\"\n Text { text: 1; onTap: page = \"tar\" } }")
         val host = TestHost(app)
@@ -788,6 +800,9 @@ class LangTest {
         // Read as it changes: a face can hide the status bar for a while.
         assertNotNull(Compiler.compile("face {\n meta { owl: 10 }\n state s = true\n statusBar: !s\n Text { text: 1; onTap: s = !s } }").statusBar)
         assertTrue(compileError("widget {\n statusBar: false\n Text { text: 1 } }").contains("unknown widget property"))
+        // An app can hide it too, from owl 11.
+        assertNotNull(Compiler.compile("app \"a\" {\n meta { owl: 11 }\n state s = true\n statusBar: !s\n Text { text: 1; onTap: s = !s } }").statusBar)
+        assertTrue(compileError("app \"a\" {\n meta { owl: 10 }\n statusBar: false\n Text { text: 1 } }").contains("needs owl 11"))
         assertEquals(OwlKind.Face, OwlKind.of("// mine\nface \"x\" {"))
         // A face runs under the navigation bar, like an edge app; its screen { } doesn't.
         Compiler.compile("face {\n meta { owl: 10 }\n Spacer { height: screenInset } }")
@@ -844,7 +859,7 @@ class LangTest {
         assertEquals(OwlKind.Widget, Compiler.compile("widget {\n Text { text: 1 } }").kind)
 
         assertTrue(compileError("app {\n Text { text: 1 } }").contains("needs owl 8"))
-        assertTrue(compileError("app {\n meta { owl: 8 }\n size: 2x2\n Text { text: 1 } }").contains("only takes title, icon, back and edge"))
+        assertTrue(compileError("app {\n meta { owl: 8 }\n size: 2x2\n Text { text: 1 } }").contains("only takes title, icon, back, edge and statusBar"))
         assertTrue(compileError("app {\n meta { owl: 8 }\n onTap: close()\n Text { text: 1 } }").contains("handlers go on the nodes"))
         assertTrue(compileError("app {\n meta { owl: 8 }\n back: true\n Text { text: 1 } }").contains("back and onBack go together"))
         assertTrue(compileError("app {\n meta { owl: 8 }\n onBack: close()\n Text { text: 1 } }").contains("back and onBack go together"))

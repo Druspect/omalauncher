@@ -685,6 +685,13 @@ object Builtins {
             "last" to Builtin(1, 1) { a -> a.list(0).lastOrNull() ?: Null },
             "indexOf" to Builtin(2, 2) { a -> n(a.list(0).indexOf(a[1]).toDouble()) },
             "unique" to Builtin(1, 1) { a -> lst(a.list(0).distinct()) },
+            // owl 11: chunk(list, n), the list in lists of n, the last one shorter: rows of a grid built by hand.
+            "chunk" to
+                Builtin(2, 2) { a ->
+                    val l = a.list(0)
+                    a.tick(l.size)
+                    lst(l.chunked(a.int(1, 1).coerceAtLeast(1)) { Lst(it.toList()) })
+                },
             // flatten(list): one level of lists in lists; owl 9 takes how many levels.
             "flatten" to
                 Builtin(1, 2) { a ->

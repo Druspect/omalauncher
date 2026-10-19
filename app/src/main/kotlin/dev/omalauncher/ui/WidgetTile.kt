@@ -144,7 +144,10 @@ private fun TileButton(
     )
 }
 
-/** An owl app's window: its title, with a back chevron while its `back` holds, over its view. */
+/**
+ * An owl app's window: its title, with a back chevron while its `back` holds, over its view. `title: ""` leaves the
+ * title row out, for an app that draws its own; Back still goes up a level while `back` holds.
+ */
 @Composable
 internal fun OwlAppWindow(
     spec: WidgetSpec,
@@ -162,7 +165,7 @@ internal fun OwlAppWindow(
             WindowInsets.safeDrawing
         }
     Column(Modifier.fillMaxSize().background(Palette.background).windowInsetsPadding(insets)) {
-        Box(Modifier.padding(horizontal = PanelPadding, vertical = 8.dp)) { BackTitle(title, up) }
+        if (title.isNotEmpty()) Box(Modifier.padding(horizontal = PanelPadding, vertical = 8.dp)) { BackTitle(title, up) }
         WidgetScreen(instance, Modifier.weight(1f).fillMaxWidth())
     }
     if (instance.program.edge) ScreenInset(instance)

@@ -24,7 +24,7 @@ class Compiler private constructor(
          * instead of failing on what they don't know. Bump it with every
          * addition a widget could depend on: nodes, properties, builtins.
          */
-        const val LEVEL = 10
+        const val LEVEL = 11
         private const val MAX_ASSET_BYTES = 2 shl 20
 
         /** Pages as far out as a file can ask for; past Int's range, the pages either side of them would wrap. */
@@ -260,7 +260,9 @@ class Compiler private constructor(
         triggers: List<Trigger>,
     ): Program {
         since("app \"…\" { }", 0)
-        for (p in body.props) if (p.name !in setOf("title", "icon", "back", "edge")) fail("an app only takes title, icon, back and edge (no size or page: it isn't a tile)", p.pos)
+        for (p in body.props) if (p.name !in setOf("title", "icon", "back", "edge", "statusBar")) fail("an app only takes title, icon, back, edge and statusBar (no size or page: it isn't a tile)", p.pos)
+        // Whether the status bar stays over the app, read as it changes, as on a face.
+        val statusBar = body.props.firstOrNull { it.name == "statusBar" }?.let { since(APP_STATUS_BAR, it.pos); ex(it.value, root) }
         // Drawn under the navigation bar: fixed in the file, since the whole view moves when it changes.
         val edge =
             body.props.firstOrNull { it.name == "edge" }?.let { p ->
@@ -306,6 +308,7 @@ class Compiler private constructor(
             back = backProp?.let { ex(it.value, root) },
             onBack = onBackHandler?.let { handler(it, root) },
             edge = edge,
+            statusBar = statusBar,
             triggers = triggers,
             commands = commands.toList(),
             warnings = warnings.toList(),
@@ -702,6 +705,7 @@ class Compiler private constructor(
             // On a tile it would raise the keyboard whenever its page shows; in a component the launcher ignores it there.
             if (p.name == "focus" && inScreen == false) fail("focus only works in a screen { }", p.pos)
             since("${n.type}.${p.name}", p.pos)
+            if (p.name == "reverse" && body.props.none { it.name == "lazy" }) fail("reverse lists a lazy ${n.type} from its end: add lazy: true", p.pos)
             if (p.name == "background" && gradient(p.value)) since(GRADIENT_BACKGROUND, p.pos)
             if (p.name == "frost") since("frost", p.pos)
             if (p.name == "font") font(p.value, scope)

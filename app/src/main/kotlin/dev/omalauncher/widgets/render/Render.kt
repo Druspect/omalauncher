@@ -28,6 +28,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
@@ -307,6 +312,134 @@ private const val MAX_DP = 4000.0
 /** A padding in dp: Compose throws on a negative or NaN one. */
 private fun inset(n: Double) = (if (n >= 0) n.coerceAtMost(MAX_DP) else 0.0).dp
 
+/** What a lazy Column or Grid lists: a node as it is, or a `for` directly inside, an item for each of its elements. */
+private sealed interface Slice {
+    class One(
+        val node: WNode,
+    ) : Slice
+
+    class Many(
+        val node: WNode.For,
+        val items: List<Value>,
+        val keys: List<String>,
+    ) : Slice
+}
+
+/**
+ * Keys for the `for` at [at] in a lazy list, from what its `key` gives each element: two the same would crash the
+ * list, so the later ones get a number on top until they're unique. "$at:" keeps them apart from other slices' keys,
+ * and from the plain "$at" of a node listed as it is.
+ */
+internal fun lazyKeys(
+    at: Int,
+    bases: List<String>,
+): List<String> {
+    val seen = HashSet<String>(bases.size * 2)
+    return bases.map { b ->
+        val base = "$at:$b"
+        var k = base
+        var n = 0
+        while (!seen.add(k)) k = base + "#" + ++n
+        k
+    }
+}
+
+/**
+ * A `for` inside a lazy Column or Grid: its elements, and a key for each that's unique in the list, as lazy lists need.
+ * Both come from one derived state, so they always agree, and the keys are worked out again only when what they read changes.
+ */
+@Composable
+private fun forSlice(
+    node: WNode.For,
+    at: Int,
+    env: Env,
+    inst: WidgetInstance,
+): Slice.Many {
+    val list = remember(node, env) { derivedStateOf(structuralEqualityPolicy()) { inst.eval(node.list, env, "for") } }
+    val slice by remember(node, env, at) {
+        derivedStateOf {
+            val items = Builtins.iterable(list.value)
+            val bases = items.mapIndexed { i, v -> node.key?.let { inst.eval(it, env.child(v, Num(i.toDouble())), "for key").toString() } ?: "$i" }
+            Slice.Many(node, items, lazyKeys(at, bases))
+        }
+    }
+    return slice
+}
+
+/** One element of a `for` in a lazy Column or Grid; a body of several nodes stacks them in a Column. */
+@Composable
+private fun ForItem(
+    node: WNode.For,
+    value: Value,
+    index: Int,
+    env: Env,
+    inst: WidgetInstance,
+) {
+    val item = rememberUpdatedState(value)
+    val i = rememberUpdatedState(index)
+    val child = remember(env) { env.childLazy(arrayOf<() -> Value>({ item.value }, { Num(i.value.toDouble()) })) }
+    if (node.body.size == 1) Node(node.body[0], child, inst, null) else Column { Nodes(node.body, child, inst, this) }
+}
+
+/**
+ * A Column or Grid with `lazy: true`: it scrolls, and builds only what's in view, so hundreds of rows open as fast as a few.
+ * With no height to fill, inside a scrolling Column, a lazy list can't be measured; there it builds everything, as without lazy.
+ */
+@Composable
+private fun LazyNodes(
+    nodes: List<WNode>,
+    env: Env,
+    inst: WidgetInstance,
+    modifier: Modifier,
+    /** A Grid's; null for a Column. */
+    columns: Int?,
+    /** A Column's `justify`; null spaces them by [gap] from the start: the top, or the bottom with [reverse]. */
+    justify: Arrangement.Vertical?,
+    alignment: Alignment.Horizontal,
+    gap: androidx.compose.ui.unit.Dp,
+    /** `reverse`: listed from the end, its first item at the bottom, as search results sit above a bar. */
+    reverse: Boolean,
+) {
+    val arrangement = justify ?: Arrangement.spacedBy(gap, if (reverse) Alignment.Bottom else Alignment.Top)
+    val slices = nodes.mapIndexed { at, n -> if (n is WNode.For) forSlice(n, at, env, inst) else Slice.One(n) }
+    val listState = rememberLazyListState()
+    val gridState = rememberLazyGridState()
+    // Listed from the end, it goes back there when its items change: new search results start at the bar, where the best one is.
+    if (reverse) {
+        // The slices' own key lists: the same lists while nothing changed, so comparing them is cheap.
+        val keys = slices.map { (it as? Slice.Many)?.keys }
+        LaunchedEffect(keys) {
+            listState.scrollToItem(0)
+            gridState.scrollToItem(0)
+        }
+    }
+    BoxWithConstraints(modifier, propagateMinConstraints = true) {
+        when {
+            !constraints.hasBoundedHeight && columns == null ->
+                Column(verticalArrangement = arrangement, horizontalAlignment = alignment) { Nodes(nodes, env, inst, this) }
+            !constraints.hasBoundedHeight -> Grid(Modifier, columns!!, gap) { Nodes(nodes, env, inst, null) }
+            columns == null ->
+                LazyColumn(state = listState, verticalArrangement = arrangement, horizontalAlignment = alignment, reverseLayout = reverse) {
+                    slices.forEachIndexed { at, slice ->
+                        when (slice) {
+                            is Slice.One -> item(key = "$at") { Node(slice.node, env, inst, null) }
+                            is Slice.Many -> items(slice.items.size, key = { slice.keys[it] }) { i -> ForItem(slice.node, slice.items[i], i, env, inst) }
+                        }
+                    }
+                }
+            else ->
+                LazyVerticalGrid(GridCells.Fixed(columns), state = gridState, verticalArrangement = arrangement, horizontalArrangement = Arrangement.spacedBy(gap), reverseLayout = reverse) {
+                    slices.forEachIndexed { at, slice ->
+                        when (slice) {
+                            is Slice.One -> item(key = "$at") { Node(slice.node, env, inst, null) }
+                            is Slice.Many -> items(slice.items.size, key = { slice.keys[it] }) { i -> ForItem(slice.node, slice.items[i], i, env, inst) }
+                        }
+                    }
+                }
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Element(
@@ -323,17 +456,24 @@ private fun Element(
     when (el.kind) {
         "Column" -> {
             val gap = (p.observe("gap")?.num() ?: 4.0).dp
-            val align = p.observe("align")?.toString()
-            Column(
-                mod.then(if (p.observe("scroll")?.truthy == true) Modifier.verticalScroll(rememberScrollState()) else Modifier),
-                verticalArrangement = vertical(p.observe("justify")?.toString(), gap),
-                horizontalAlignment =
-                    when (align) {
-                        "center" -> Alignment.CenterHorizontally
-                        "end" -> Alignment.End
-                        else -> Alignment.Start
-                    },
-            ) { Nodes(el.children, env, inst, this) }
+            val arrangement = vertical(p.observe("justify")?.toString(), gap)
+            val alignment =
+                when (p.observe("align")?.toString()) {
+                    "center" -> Alignment.CenterHorizontally
+                    "end" -> Alignment.End
+                    else -> Alignment.Start
+                }
+            if (p.observe("lazy")?.truthy == true) {
+                LazyNodes(el.children, env, inst, mod, null, arrangement.takeIf { p.has("justify") }, alignment, gap, p.observe("reverse")?.truthy == true)
+            } else {
+                HoldingPopups(el, mod, env, inst) { m, children ->
+                    Column(
+                        m.then(if (p.observe("scroll")?.truthy == true) Modifier.verticalScroll(rememberScrollState()) else Modifier),
+                        verticalArrangement = arrangement,
+                        horizontalAlignment = alignment,
+                    ) { Nodes(children, env, inst, this) }
+                }
+            }
         }
         "Row", "Flow" -> {
             val gap = (p.observe("gap")?.num() ?: 8.0).dp
@@ -344,17 +484,27 @@ private fun Element(
                     else -> Alignment.CenterVertically
                 }
             val arr = horizontal(p.observe("justify")?.toString(), gap)
-            if (el.kind == "Flow" || p.observe("wrap")?.truthy == true) {
-                FlowRow(mod, horizontalArrangement = arr, verticalArrangement = Arrangement.spacedBy(gap), itemVerticalAlignment = vertical) {
-                    Nodes(el.children, env, inst, this)
+            HoldingPopups(el, mod, env, inst) { m, children ->
+                if (el.kind == "Flow" || p.observe("wrap")?.truthy == true) {
+                    FlowRow(m, horizontalArrangement = arr, verticalArrangement = Arrangement.spacedBy(gap), itemVerticalAlignment = vertical) {
+                        Nodes(children, env, inst, this)
+                    }
+                } else {
+                    Row(m, horizontalArrangement = arr, verticalAlignment = vertical) { Nodes(children, env, inst, this) }
                 }
-            } else {
-                Row(mod, horizontalArrangement = arr, verticalAlignment = vertical) { Nodes(el.children, env, inst, this) }
             }
         }
         "Box" -> Box(mod, contentAlignment = boxAlign(p.observe("align")?.toString())) { Nodes(el.children, env, inst, this) }
         "Popup" -> PopupNode(el, p, mod, env, inst)
-        "Grid" -> Grid(mod, (p.observe("columns")?.num() ?: 2.0).toInt().coerceIn(1, 12), (p.observe("gap")?.num() ?: 6.0).dp) { Nodes(el.children, env, inst, null) }
+        "Grid" -> {
+            val columns = (p.observe("columns")?.num() ?: 2.0).toInt().coerceIn(1, 12)
+            val gap = (p.observe("gap")?.num() ?: 6.0).dp
+            if (p.observe("lazy")?.truthy == true) {
+                LazyNodes(el.children, env, inst, mod, columns, null, Alignment.Start, gap, p.observe("reverse")?.truthy == true)
+            } else {
+                Grid(mod, columns, gap) { Nodes(el.children, env, inst, null) }
+            }
+        }
         // Since owl 10 a Text in a Row or Flow is as wide as its text; before, it took the whole width unless sized.
         "Text" -> TextNode(p, mod, parent is RowScope && inst.program.level >= 10)
         "Button" -> {
@@ -462,11 +612,11 @@ private fun Element(
                     val bitmap = image.bitmap
                     // An alpha-only image (an app icon's silhouette, with monochrome icons) needs a color to show.
                     val tint = p.observe("tint")?.let { p.color(it) } ?: Palette.foreground.takeIf { bitmap.config == ImageBitmapConfig.Alpha8 }
-                    Image(bitmap, null, mod, contentScale = scale, colorFilter = tint?.let { ColorFilter.tint(it) })
+                    Image(bitmap, p.observe("label")?.toString(), mod, contentScale = scale, colorFilter = tint?.let { ColorFilter.tint(it) })
                 }
                 is WidgetImage.Vector -> {
                     val tint = p.observe("tint")?.let { p.color(it) }
-                    Image(remember(image) { PicturePainter(image.picture) }, null, mod, contentScale = scale, colorFilter = tint?.let { ColorFilter.tint(it) })
+                    Image(remember(image) { PicturePainter(image.picture) }, p.observe("label")?.toString(), mod, contentScale = scale, colorFilter = tint?.let { ColorFilter.tint(it) })
                 }
                 null -> {}
             }
@@ -769,12 +919,15 @@ private fun TextNode(
                 },
         )
     val pieces = p.observe("spans")
+    // Big text stays on one line in narrow tiles instead of breaking mid-word.
+    val maxLines = p.observe("maxLines")?.num()?.toInt()?.coerceAtLeast(1) ?: if (style == "huge" || style == "title") 1 else Int.MAX_VALUE
     BasicText(
         if (pieces != null) spans(pieces, p.inst) else AnnotatedString(p.observe("text")?.text().orEmpty()),
         if (p.has("width") || p.has("weight") || p.has("fill") || hug) mod else mod.fillMaxWidth(),
         style = textStyle,
-        // Big text stays on one line in narrow tiles instead of breaking mid-word.
-        maxLines = p.observe("maxLines")?.num()?.toInt()?.coerceAtLeast(1) ?: if (style == "huge" || style == "title") 1 else Int.MAX_VALUE,
+        maxLines = maxLines,
+        // As tall as that many lines at any font size, where a height in dp would cut the last off with larger text.
+        minLines = p.observe("minLines")?.num()?.toInt()?.coerceIn(1, maxLines) ?: 1,
         overflow = TextOverflow.Ellipsis,
         color = ColorProducer { color() },
     )
@@ -785,6 +938,28 @@ private fun TextNode(
  * node that holds it or above with `position: above`, kept on screen. Framed like the launcher's own menus
  * unless it has a background or border. A tap outside or Back runs onDismiss, which the compiler requires.
  */
+/**
+ * A Row, Column or Flow with a Popup among its children. A Popup takes no room, but these would put their gap before
+ * it all the same: the moment one opened, the node holding it grew by a gap, and what's beside it moved. So its
+ * Popups are held beside the others, in a Box the node's size, and open next to the same bounds. [content] lays out
+ * the rest, with the modifier to use.
+ */
+@Composable
+private fun HoldingPopups(
+    el: WNode.Element,
+    mod: Modifier,
+    env: Env,
+    inst: WidgetInstance,
+    content: @Composable (Modifier, List<WNode>) -> Unit,
+) {
+    val popups = el.children.filter { it is WNode.Element && it.kind == "Popup" }
+    if (popups.isEmpty()) return content(mod, el.children)
+    Box(mod, propagateMinConstraints = true) {
+        content(Modifier, el.children - popups.toSet())
+        Nodes(popups, env, inst, null)
+    }
+}
+
 @Composable
 private fun PopupNode(
     el: WNode.Element,
