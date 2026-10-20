@@ -651,7 +651,8 @@ class Compiler private constructor(
             for (n in names) if (!valid.matches(n)) fail("'$n' isn't a valid ${f.name} package name", f.value.pos)
             out.getOrPut(f.name) { mutableListOf() }.addAll(names.filter { it !in out[f.name].orEmpty() })
         }
-        return out
+        // `pacman: []` asks for nothing, so it mustn't make the widget need Linux.
+        return out.filterValues { it.isNotEmpty() }
     }
 
     private fun asset(d: Decl.Asset): Global.Asset {

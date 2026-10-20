@@ -571,6 +571,7 @@ class LangTest {
         // Without Linux, tapping app(...) or terminal(...) offers to install it instead.
         assertEquals(false, needs("onTap: app(\"btop\")\nText { text: \"x\" }"))
         assertEquals(true, needs("requires { pacman: [\"jq\"] }\nText { text: \"x\" }"))
+        assertEquals(false, needs("requires { pacman: [] }\nText { text: \"x\" }"))
         val dir = java.io.File("../app/src/main/assets/widgets")
         fun bundled(name: String) = Compiler.compile(java.io.File(dir, name).readText()).needsLinux
         assertEquals(false, bundled("10-today.owl"))
