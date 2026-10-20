@@ -61,7 +61,7 @@ class Compiler private constructor(
         fun shaderReadsTime(code: String) = TIME_WORD.containsMatchIn(code)
 
         /** A URL whose scheme and host are fixed text, so no value can send it elsewhere. */
-        private val FIXED_HOST = Regex("""^https?://[A-Za-z0-9.-]+(:[0-9]+)?/""")
+        private val FIXED_HOST = Regex("""^(https?|wss?)://[A-Za-z0-9.-]+(:[0-9]+)?/""")
     }
 
     /** Compile-time mirror of an [Env] frame. Only the first [visible] names resolve (lets see earlier lets only). */
@@ -574,7 +574,7 @@ class Compiler private constructor(
 
     private fun source(d: Decl.Source): Global.Source {
         val e = d.expr
-        if (d.status && !(e is Expr.Call && e.name in setOf("cmd", "http"))) fail("status only works on cmd(...) and http(...)", d.pos)
+        if (d.status && !(e is Expr.Call && e.name in setOf("cmd", "http", "ws"))) fail("status only works on cmd(...), http(...) and ws(...)", d.pos)
         if (d.optional) {
             if (!(e is Expr.Call && e.name in setOf("cmd", "stream", "file"))) fail("optional only works on cmd(...), stream(...) and file(...), which need Linux", d.pos)
             since("optional", d.pos)
@@ -594,6 +594,17 @@ class Compiler private constructor(
                 listUrl("http GET", e.args[0], url, root)
                 val pin = pin(e, url, root)
                 Global.Source(d.name, "http", url, (every ?: 60.0).coerceAtLeast(5.0), d.json, timeout.coerceIn(1, 300), d.status, e.args.getOrNull(1)?.let { withSecrets { ex(it, root) } }, pin)
+            }
+            e is Expr.Call && e.name == "ws" -> {
+                if (e.args.size !in 1..2) fail("ws(\"wss://...\") takes a URL and optionally a map of headers", e.pos)
+                for ((k, v) in e.named) if (k != "pin") fail("ws takes pin: and no other named arguments", v.pos)
+                if (d.every != null || d.timeout != null) fail("ws(...) listens for messages; it takes no every or timeout", d.pos)
+                since("ws", e.pos)
+                val url = ex(e.args[0], root)
+                (url.const as? Str)?.v?.let { if (!it.startsWith("wss://") && !it.startsWith("ws://")) fail("ws takes a wss:// or ws:// URL", e.args[0].pos) }
+                listUrl("websocket", e.args[0], url, root)
+                val pin = pin(e, url, root)
+                Global.Source(d.name, "ws", url, 0.0, d.json, 0, d.status, e.args.getOrNull(1)?.let { withSecrets { ex(it, root) } }, pin)
             }
             e is Expr.Call && e.name in setOf("cmd", "stream") -> {
                 if (e.args.size != 1 || e.named.isNotEmpty()) fail("${e.name}(\"command\") takes one command", e.pos)
@@ -623,7 +634,7 @@ class Compiler private constructor(
                 if (e.name == "drawer") commands += "read the launcher's apps (names and icons)"
                 Global.Source(d.name, "android.${e.name}", null, (every ?: 60.0).coerceAtLeast(1.0), false, 0)
             }
-            else -> fail("a source is cmd(\"...\"), stream(\"...\"), http(\"...\"), file(\"...\"), clock, or android.${ANDROID.joinToString("/")}", e.pos)
+            else -> fail("a source is cmd(\"...\"), stream(\"...\"), http(\"...\"), ws(\"...\"), file(\"...\"), clock, or android.${ANDROID.joinToString("/")}", e.pos)
         }
     }
 
@@ -984,6 +995,7 @@ class Compiler private constructor(
             is Stmt.Do -> {
                 val call = s.call as Expr.Call
                 if (call.name == "post") return post(call, scope, null)
+                if (call.name == "send") return send(call, scope)
                 if (call.name == "shortcuts") fail("shortcuts(...) puts an app's shortcuts into a state, when they've loaded: menuShortcuts = shortcuts(a.key)", call.pos)
                 val arity = Builtins.actions[call.name] ?: fail("'${call.name}' isn't an action (${Builtins.actions.keys.joinToString()})", call.pos)
                 if (call.args.size !in arity) fail("${call.name} takes ${arity.first}-${arity.last} values", call.pos)
@@ -1049,7 +1061,26 @@ class Compiler private constructor(
     }
 
     /**
-     * `pin: "…"` on [call], http(...) or post(...): the SHA-256 of the one certificate its HTTPS server
+     * `send(source, message)`: a message on a ws(...) source's connection, a map or list as JSON. A secret
+     * may go into it, as into a request's body: only the server the source connects to gets it.
+     */
+    private fun send(
+        call: Expr.Call,
+        scope: Scope,
+    ): (Env) -> Unit {
+        if (call.args.size != 2 || call.named.isNotEmpty()) fail("send(source, message) takes a ws(...) source and a message", call.pos)
+        since("send", call.pos)
+        val name = (call.args[0] as? Expr.Name)?.name
+        val slot = name?.let { slots[it] }
+        if (slot == null || (globals[slot] as? Global.Source)?.kind != "ws" || lookup(name, scope) !is Ref.Slot) {
+            fail("send's first value is a ws(...) source, by its name: send(feed, {type: \"hello\"})", call.args[0].pos)
+        }
+        val message = withSecrets { ex(call.args[1], scope) }
+        return { env -> env.host.send(slot, message(env)) }
+    }
+
+    /**
+     * `pin: "…"` on [call], http(...), post(...) or ws(...): the SHA-256 of the one certificate its server
      * may show, as hex (colons allowed, as openssl prints it), checked here when it's a constant.
      */
     private fun pin(
@@ -1059,7 +1090,7 @@ class Compiler private constructor(
     ): Ev? {
         val e = call.named.firstOrNull { it.first == "pin" }?.second ?: return null
         since(HTTP_PIN, e.pos)
-        (url.const as? Str)?.v?.let { if (!it.startsWith("https://")) fail("pin: needs an https:// URL", call.args[0].pos) }
+        (url.const as? Str)?.v?.let { if (!it.startsWith("https://") && !it.startsWith("wss://")) fail("pin: needs an https:// or wss:// URL", call.args[0].pos) }
         val pin = ex(e, scope)
         (pin.const as? Str)?.v?.let { if (Pins.normalize(it) == null) fail("pin: is a certificate's SHA-256 as 64 hex digits, like openssl x509 -noout -fingerprint -sha256 prints it", e.pos) }
         return pin
@@ -1273,7 +1304,7 @@ class Compiler private constructor(
             is Ref.Local -> return Ev(null) { env -> env.local(ref.depth, ref.index) }
             is Ref.Slot -> {
                 // Never shown, run or copied: on screen or in Linux, it would be out.
-                if (e.name in secrets && !secretOk) fail("${e.name} is a secret: it only goes into http(...)'s and post(...)'s headers and body, or is compared with null or \"\"", e.pos)
+                if (e.name in secrets && !secretOk) fail("${e.name} is a secret: it only goes into http(...)'s, post(...)'s and ws(...)'s headers, post's body and send's messages, or is compared with null or \"\"", e.pos)
                 return Ev(null) { env -> env.host.read(ref.index) }
             }
             null -> {}
@@ -1323,7 +1354,7 @@ class Compiler private constructor(
     ): Ev {
         if (e.name in Builtins.actions) fail("${e.name}(...) is an action; use it in a handler like onTap", e.pos)
         if (e.name in setOf("history", "prev")) fail("${e.name}(...) keeps samples over time, so it only works as: let x = ${e.name}(...)", e.pos)
-        if (e.name in setOf("cmd", "stream", "http", "file")) fail("${e.name}(...) is a source: source x = ${e.name}(\"...\")", e.pos)
+        if (e.name in setOf("cmd", "stream", "http", "ws", "file")) fail("${e.name}(...) is a source: source x = ${e.name}(\"...\")", e.pos)
         val b = Builtins.all[e.name] ?: fail("unknown function '${e.name}'", e.pos)
         since(e.name, e.pos)
         if (e.name == "fmtTime" && e.args.size > 2) since(FMT_TIME_ZONE, e.pos)

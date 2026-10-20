@@ -65,6 +65,13 @@ class LangTest {
         ) {
             actions += "post $slot $url $body $headers" + (if (method != "POST") " $method" else "") + (pin?.let { " pin $it" } ?: "")
         }
+
+        override fun send(
+            slot: Int,
+            message: Value,
+        ) {
+            actions += "send $slot $message"
+        }
     }
 
     /** Compiles a widget with one Text and evaluates its text. */
@@ -314,7 +321,7 @@ class LangTest {
         assertTrue(compileError(app + "method: \"PATCH\")\n Text { text: 1 } }").contains("method: is one of"))
         assertTrue(compileError(app + "pin: \"abcd\")\n Text { text: 1 } }").contains("64 hex digits"))
         assertTrue(compileError(app + "retries: 3)\n Text { text: 1 } }").contains("no other named arguments"))
-        assertTrue(compileError("widget {\n meta { owl: 12 }\n source h = http(\"http://x.test/\", {}, pin: \"$pin\")\n Text { text: h } }").contains("pin: needs an https:// URL"))
+        assertTrue(compileError("widget {\n meta { owl: 12 }\n source h = http(\"http://x.test/\", {}, pin: \"$pin\")\n Text { text: h } }").contains("pin: needs an https://"))
     }
 
     /** A secret only goes into a request's headers and body, or a check that it's set (owl 12). */
@@ -338,6 +345,37 @@ class LangTest {
         compileError(w + " source s = http(\"https://x.test/${'$'}{token}\")\n Text { text: 1 } }").let { assertTrue(it, it.contains("token is a secret")) }
         compileError("widget {\n meta { owl: 12 }\n state token = null secret persist\n Text { text: 1 } }").let { assertTrue(it, it.contains("without persist")) }
         compileError("widget {\n meta { owl: 11 }\n state token = null secret\n Text { text: 1 } }").let { assertTrue(it, it.contains("secret needs owl 12")) }
+    }
+
+    /** ws(...) listens to a WebSocket server, and send(...) talks back on its connection (owl 12). */
+    @Test fun webSockets() {
+        val pin = "ab".repeat(32)
+        val p =
+            Compiler.compile(
+                "app \"t\" {\n meta { owl: 12 }\n state token = null secret\n state cols = 80\n" +
+                    " source t = ws(token == null ? null : \"wss://pc.lan:8759/stream?viewport=1\", {Authorization: \"Bearer ${'$'}{token}\"}, pin: \"$pin\") json status\n" +
+                    " source h = ws(\"ws://192.168.1.2/harnesses\")\n" +
+                    " when t.open { send(t, {type: \"viewport\", columns: cols, auth: token}) }\n" +
+                    " every 10s { send(h, \"ping\") }\n Text { text: t.out } }",
+            )
+        val t = p.globals[2] as Global.Source
+        assertEquals("ws", t.kind)
+        assertTrue(t.json && t.status && t.headers != null && t.pin != null)
+        assertEquals(setOf("websocket wss://pc.lan:8759/stream?viewport=1", "websocket ws://192.168.1.2/harnesses"), p.commands.toSet())
+        assertFalse(p.needsLinux)
+        val host = TestHost(p)
+        host.slots[0] = Str("tk")
+        p.triggers.forEach { it.action.run(Env.root(host), emptyList()) }
+        assertEquals(listOf("send 2 {type: viewport, columns: 80, auth: tk}", "send 3 ping"), host.actions)
+
+        val w = "widget {\n meta { owl: 12 }\n"
+        compileError(w + " source s = ws(\"https://x.test/\")\n Text { text: s } }").let { assertTrue(it, it.contains("wss:// or ws://")) }
+        compileError(w + " source s = ws(\"wss://x.test/\") every 5s\n Text { text: s } }").let { assertTrue(it, it.contains("no every or timeout")) }
+        compileError(w + " source s = http(\"https://x.test/\")\n Text { text: 1; onTap: send(s, 1) } }").let { assertTrue(it, it.contains("send's first value is a ws(...) source")) }
+        compileError(w + " source s = ws(\"wss://x.test/\")\n Text { text: 1; onTap: send(s) } }").let { assertTrue(it, it.contains("takes a ws(...) source and a message")) }
+        compileError(w + " source s = ws(\"ws://x.test/\", {}, pin: \"$pin\")\n Text { text: s } }").let { assertTrue(it, it.contains("pin: needs an https:// or wss:// URL")) }
+        compileError(w + " source s = ws(\"wss://x.test/\")\n Text { text: send(s, 1) } }").let { assertTrue(it, it.contains("is an action")) }
+        compileError("widget {\n meta { owl: 11 }\n source s = ws(\"wss://x.test/\")\n Text { text: s } }").let { assertTrue(it, it.contains("ws needs owl 12")) }
     }
 
     @Test fun base64() {

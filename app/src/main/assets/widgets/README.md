@@ -67,6 +67,7 @@ that read it redraw. Properties are separated by newlines or `;`.
 | `source x = cmd("...") every 5s` | runs a bash command in this Arch system; `x` is its output (stdout, trimmed). Add `json` to parse JSON output, `timeout 30s` to allow more than 10 s, `status` to get `{out, err, code, ok}` instead (see below), `optional` to let the widget work without Linux (see Without Linux). Default interval: 60 s |
 | `source x = stream("...")` | a long-running command; every line it prints becomes the new value. Add `json` for JSON lines. At most 4 different streams run at once |
 | `source x = http("https://...") every 10m` | an HTTP GET from Android, no curl or shell needed. Takes `json`, `timeout` and `status` like cmd (with `status`, `code` is the HTTP status and `ok` means 2xx), and optionally headers: `http(url, {Accept: "application/json"})`, and `pin:` for a server with a certificate of its own (owl 12, see Sending). The response is capped at 1 MB and the interval at 5 s or more. Prefer it over `cmd("curl ...")`. A URL can hold values, through `enc()` (see Values in URLs); it's fetched again as soon as it changes, and a `null` URL pauses the source, keeping its last value: `http(tab == "news" ? "https://..." : null)` fetches only while that tab shows. A failed fetch (offline, an error status, a rate limit) is tried again after 30 s |
+| `source x = ws("wss://...")` | a WebSocket from Android (owl 12): every message the server sends becomes the new value. Takes `json`, headers and `pin:` like `http`, and `status` for `{out, open, err}`: the last message, whether it's connected, and why it last failed. Connected while its page shows, again when its URL changes, and again after it drops; a `null` URL keeps it closed. `send(x, message)` talks back. See WebSockets |
 | `source x = file("~/.cache/x.json")` | a file in this system, read again whenever it changes (no polling, no shell). Add `json` to parse it. A missing file reads as `""`; at most 1 MB is read. Prefer it over `cmd("cat ...") every 5s` (owl 4) |
 | `source now = clock every 1s` | Unix time in seconds, with no shell involved. Use `fmtTime(now, "HH:mm")` |
 | `source bat = android.battery` | `{level, charging, status, temp, voltage, health, plugged, technology, cycles}` from Android, updated as it changes (`temp` in °C, `voltage` in V; `health`, `plugged`, `technology` and `cycles` are null when the phone doesn't say) |
@@ -90,7 +91,7 @@ that read it redraw. Properties are separated by newlines or `;`.
 | `asset logo = base64"iVBOR..."` | an embedded image (under 2 MB) for `Image { src: logo }`, or a font for `font: logo` (owl 10, see Fonts), so the widget is one self-contained file |
 | `requires { pacman: ["jq", "curl"] }` | packages the widget's commands need; see Dependencies |
 | `meta { description: "..."; version: "1.0"; license: "MIT"; category: "news" }` | needed to publish to the widget store (see Sharing) |
-| `meta { owl: 11 }` | the language version the widget needs (this launcher has 12; the default is 1). Older launchers say "update the launcher" instead of failing on what they don't know. `Terminal` needs 2, `sprite` 3, triggers, `file`, `Slider`, `Input`, `android.notifications`, `android.volume`, `volume` and `notification` need 4, and `screen { }`, `screen()`, `close()`, `screenWidth` and `screenHeight` need 5, `Input`'s `focus`, `sh()` and `corners` 6, and `android.alarm`, `android.modes`, `torch`, `share` and `haptic` 7, and `app "…" { }` files, `android.apps`, `enc`, `post`, images from the web, `sound` and `screenInset` 8, and `parseTime`, `fmtAgo`, `fmtNum`, `random`, `shuffle`, `hash`, `fmtTime`'s zone and language, `set`, `remove`, `merge`, `reduce`, `scan`, `groupBy`, `toJson`, `capitalize`, `asin`, `acos`, `flatten`'s depth, `on … first`, and `if` and `let` in handlers 9, and `face "…" { }` files, `onLongPress`, Text's `spans`, `fontWeight` and `letterSpacing`, gradient backgrounds, `frost`, fonts of a widget's own and Canvas `text`'s `font`, `fontWeight`, `italic` and `letterSpacing`, `android.agents`, `android.recent`, `open`, `ask`, `Popup` and Input's `underline` 10, and `android.drawer`, `appAction`, `workApps`, `rank`, `strongMatch`, `chunk`, Column's and Grid's `lazy`, `panel "…" { }` files with `query`, `enter`, `onSubmit` and `onKey`, `shortcuts`, Column's and Grid's `reverse`, Image's `label`, Text's `minLines`, an app's `statusBar` and a Column in a Row as wide as its content 11, and `screenTop`, `pin:` and `method:` on `http`/`post`, `toBase64`, `fromBase64`, `secret` states and Input's `password` 12; using them without declaring it is an error |
+| `meta { owl: 11 }` | the language version the widget needs (this launcher has 12; the default is 1). Older launchers say "update the launcher" instead of failing on what they don't know. `Terminal` needs 2, `sprite` 3, triggers, `file`, `Slider`, `Input`, `android.notifications`, `android.volume`, `volume` and `notification` need 4, and `screen { }`, `screen()`, `close()`, `screenWidth` and `screenHeight` need 5, `Input`'s `focus`, `sh()` and `corners` 6, and `android.alarm`, `android.modes`, `torch`, `share` and `haptic` 7, and `app "…" { }` files, `android.apps`, `enc`, `post`, images from the web, `sound` and `screenInset` 8, and `parseTime`, `fmtAgo`, `fmtNum`, `random`, `shuffle`, `hash`, `fmtTime`'s zone and language, `set`, `remove`, `merge`, `reduce`, `scan`, `groupBy`, `toJson`, `capitalize`, `asin`, `acos`, `flatten`'s depth, `on … first`, and `if` and `let` in handlers 9, and `face "…" { }` files, `onLongPress`, Text's `spans`, `fontWeight` and `letterSpacing`, gradient backgrounds, `frost`, fonts of a widget's own and Canvas `text`'s `font`, `fontWeight`, `italic` and `letterSpacing`, `android.agents`, `android.recent`, `open`, `ask`, `Popup` and Input's `underline` 10, and `android.drawer`, `appAction`, `workApps`, `rank`, `strongMatch`, `chunk`, Column's and Grid's `lazy`, `panel "…" { }` files with `query`, `enter`, `onSubmit` and `onKey`, `shortcuts`, Column's and Grid's `reverse`, Image's `label`, Text's `minLines`, an app's `statusBar` and a Column in a Row as wide as its content 11, and `screenTop`, `pin:` and `method:` on `http`/`post`, `toBase64`, `fromBase64`, `secret` states, Input's `password`, `ws` and `send` 12; using them without declaring it is an error |
 | `onTap: ...` | runs when the tile (not a button inside it) is tapped |
 | `screen { ... }` | a full-screen view of the widget, opened with `screen()`; see Screens (owl 5) |
 | `every 10s { ... }`, `at t { ... }`, `when c { ... }`, `on x { ... }` | statements that run without a tap; see Triggers |
@@ -480,6 +481,7 @@ after it in its block (and blocks inside them), and needs a name not used for a 
 | `copy(text)` | copies text to the Android clipboard |
 | `notify("title", "text")` | posts an Android notification (if the launcher may post them) |
 | `post("https://...", body, headers)` | sends an HTTP POST from Android: a map or list `body` goes as JSON, text as it is; `headers` is a map like `http(...)`'s. `x = post(...)` puts the answer into the state `x` when it arrives: `{code, ok, out}`, with `out` parsed when it's JSON. `method: "PUT"` or `"DELETE"` sends that instead, and `pin:` trusts one certificate (owl 12). Never retried; a null URL sends nothing. When it succeeds, the widget's sources run again. See Sending (owl 8) |
+| `send(x, message)` | sends a message on the `ws(...)` source `x`'s connection: a map or list as JSON, anything else as its text. Dropped, with an error, while it isn't connected. See WebSockets (owl 12) |
 | `url("https://...")` | opens in the Android browser. Other links open in the app that takes them: `tel:` the dialer, `geo:` maps, `mailto:` email |
 | `share(text)` | opens Android's share sheet with the text (owl 7) |
 | `haptic()` | a short tap of haptic feedback, if the user has touch feedback on (owl 7) |
@@ -557,8 +559,8 @@ certificate fails with an error that says the SHA-256 it showed. A pinned reques
 
 A token or a password goes in a `secret` state (owl 12). It's kept across restarts encrypted with a key
 that never leaves the phone, apart from `persist` values, so Linux, a backup or a shared copy of the
-widget never holds it. It only goes into requests' headers and body, and the widget can ask whether it's
-set; showing it, putting it in a URL or a command, copying it or assigning it to another state is an
+widget never holds it. It only goes into requests' headers and body (and a WebSocket's headers and
+`send` messages), and the widget can ask whether it's set; showing it, putting it in a URL or a command, copying it or assigning it to another state is an
 error:
 
 ```owl
@@ -579,6 +581,33 @@ widget "nas" {
 The `null` URL pauses the source until there's a token, so it doesn't ask with `Bearer …` (null as
 text). `token = null` forgets it. A secret is as safe as the widget's file: whoever can change the file can
 change where it's sent.
+
+### WebSockets
+
+A server that pushes what changes, like a terminal or a live feed, talks over a WebSocket. `ws(url)` is
+a source whose value is the server's latest message (owl 12); a handler answers with `send(source,
+message)`. It connects from Android while the widget's page shows (or the app is open), closes when it
+doesn't, connects again when its URL, headers or pin change, and after it drops waits a second, then
+longer each time it fails, up to a minute. The URL is listed for review as `websocket wss://…`, under the
+same rule as `http`'s:
+
+```owl
+app "agent" {
+  meta { owl: 12 }
+  state token = null secret
+  source term = ws(token == null ? null : "wss://192.168.1.20:8759/stream", {Authorization: "Bearer ${token}"}, pin: "3F:A1:5C:0B:6E:2D:88:41:9A:C7:13:F0:52:BE:64:D9:07:A3:1E:C8:95:4F:2B:D6:70:18:E3:AC:59:06:B4:9C") json status
+  when term.open { send(term, {type: "viewport", columns: 80, rows: 24}) }
+  every 10s { send(term, {type: "viewport", columns: 80, rows: 24}) }
+  Text { text: term.out.text ?? (term.err != "" ? term.err : "connecting…") }
+}
+```
+
+With `status`, the value is `{out, open, err}`: `out` keeps the last message while it reconnects, `open`
+says whether it's connected (a `when term.open { ... }` greets each new connection), and `err` why the
+last one failed, which isn't reported as an error then. Messages are text, up to 1 MB each; binary ones
+are skipped. Each message replaces the last, so a server that sends changes rather than whole states
+needs an `on term { ... }` that adds them up in a state. A connection quiet for 30 s is pinged, and
+one that doesn't answer in another 30 s counts as dropped. No compression, subprotocols or proxies.
 
 ## Sounds
 

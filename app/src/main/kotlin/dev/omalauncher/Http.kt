@@ -31,7 +31,7 @@ fun openHttp(
  * certificate fails the handshake with a message that says the SHA-256 it had.
  */
 fun HttpsURLConnection.pin(pin: String) {
-    sslSocketFactory = pinnedFactories.getOrPut(pin) { pinnedFactory(pin) }
+    sslSocketFactory = pinnedSocketFactory(pin)
     // The handshake checked the certificate; its names don't matter.
     hostnameVerifier = javax.net.ssl.HostnameVerifier { _, _ -> true }
     instanceFollowRedirects = false
@@ -39,6 +39,9 @@ fun HttpsURLConnection.pin(pin: String) {
 
 /** One factory per pin: the same one each time lets Android reuse a pinned connection. */
 private val pinnedFactories = ConcurrentHashMap<String, SSLSocketFactory>()
+
+/** Sockets that trust only the certificate [pin] names, as [pin] describes; they check no host names. */
+fun pinnedSocketFactory(pin: String): SSLSocketFactory = pinnedFactories.getOrPut(pin) { pinnedFactory(pin) }
 
 private fun pinnedFactory(pin: String): SSLSocketFactory {
     val trust =

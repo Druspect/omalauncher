@@ -44,6 +44,7 @@ import dev.omalauncher.linux.Proot
 import dev.omalauncher.linux.ShellPool
 import dev.omalauncher.linux.ShellResult
 import dev.omalauncher.SecretBox
+import dev.omalauncher.WebSocket
 import dev.omalauncher.openHttp
 import dev.omalauncher.pin
 import dev.omalauncher.openUrl
@@ -98,6 +99,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.transform
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -105,6 +107,12 @@ import java.io.File
 import java.io.IOException
 import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.concurrent.thread
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import javax.net.ssl.HttpsURLConnection
 
 private const val MAX_HTTP_BYTES = 1 shl 20
@@ -617,6 +625,48 @@ class WidgetServices(
                 ShellResult("", e.message ?: e.toString(), -1)
             }
         }
+
+    override suspend fun webSocket(
+        url: String,
+        headers: Map<String, String>,
+        pin: String?,
+        opened: ((String) -> Boolean) -> Unit,
+        onText: (String) -> Unit,
+    ) {
+        val pinned = pin?.let { Pins.normalize(it) ?: throw IOException("pin: isn't a SHA-256 (64 hex digits): $it") }
+        val socket = AtomicReference<WebSocket?>()
+        val gone = AtomicBoolean()
+        suspendCancellableCoroutine { cont ->
+            // Leaving the page says goodbye; the socket's thread finishes the close handshake on its own.
+            cont.invokeOnCancellation {
+                gone.set(true)
+                socket.get()?.close(1001)
+            }
+            // A thread of its own: the connection blocks it for as long as it's open.
+            thread(name = "owl-ws", isDaemon = true) {
+                try {
+                    val ws = WebSocket.connect(url, headers, pinned)
+                    socket.set(ws)
+                    if (gone.get()) return@thread ws.cancel()
+                    // Handlers send on the main thread, where Android allows no network; in order, on a thread of their own.
+                    val writer = Executors.newSingleThreadExecutor { r -> Thread(r, "owl-ws-send").apply { isDaemon = true } }
+                    try {
+                        opened { text ->
+                            // Shut down once the connection ended, a moment before the widget hears of it.
+                            ws.isOpen && runCatching { writer.execute { ws.send(text) } }.isSuccess
+                        }
+                        ws.listen(onText)
+                    } finally {
+                        writer.shutdown()
+                    }
+                    cont.resume(Unit)
+                } catch (e: Exception) {
+                    // Anything else thrown here would take the launcher down; the source reports it and connects again.
+                    cont.resumeWithException(e as? IOException ?: IOException(e.message ?: e.toString(), e))
+                }
+            }
+        }
+    }
 
     override fun seal(plain: ByteArray) = SecretBox.seal(plain)
 

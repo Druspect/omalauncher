@@ -49,6 +49,7 @@ import dev.omalauncher.widgets.lang.bool
 import dev.omalauncher.widgets.lang.num
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -86,6 +87,19 @@ interface Services {
         method: String = "POST",
         pin: String? = null,
     ): ShellResult
+
+    /**
+     * `ws(...)`: connects to a WebSocket server and hands [opened] a way to send text, then each text message
+     * to [onText], until the connection ends (returning) or breaks (an IOException); cancelling closes it.
+     * With a [pin], to a wss:// server with that certificate only.
+     */
+    suspend fun webSocket(
+        url: String,
+        headers: Map<String, String>,
+        pin: String?,
+        opened: ((String) -> Boolean) -> Unit,
+        onText: (String) -> Unit,
+    ): Unit = throw java.io.IOException("WebSockets aren't available here")
 
     /**
      * A file from the web, for `Image { src: "https://..." }` and `sound("https://...")`: kept on disk,
@@ -636,6 +650,7 @@ class WidgetInstance(
                                 val ended = untilPaused(active, g) { services.stream(command) { line -> set(slot, g, line) } }
                                 if (ended) delay(5000) // the command exited: restart it, but not in a tight loop
                             }
+                            "ws" -> untilPaused(active, g) { listen(slot, g) }
                             "file" ->
                                 untilPaused(active, g) {
                                     // A path built from state is watched anew when it changes.
@@ -678,6 +693,84 @@ class WidgetInstance(
                     }
                 }
         }
+    }
+
+    /** How to send on each ws(...) source's connection while it's open, by slot. */
+    private val senders = java.util.concurrent.ConcurrentHashMap<Int, (String) -> Boolean>()
+
+    /**
+     * A ws(...) source while its page is live: connected to what its URL, headers and pin say now, again
+     * whenever they change, and again after the connection ends or breaks, waiting longer each time it
+     * fails soon after connecting. A null URL keeps it closed. Each message becomes its value.
+     */
+    private suspend fun listen(
+        slot: Int,
+        g: Global.Source,
+    ) {
+        // {out, open, err} with status; out keeps the last message while it reconnects.
+        var out: Value = Null
+        fun status(
+            open: Boolean,
+            err: String,
+        ) {
+            if (g.status) write(slot, Obj(mapOf("out" to out, "open" to bool(open), "err" to Str(err))))
+        }
+        snapshotFlow {
+            val url = eval(g.arg!!, root, g.name)
+            val headers = (g.headers?.let { eval(it, root, g.name) } as? Obj)?.fields.orEmpty().mapValues { it.value.toString() }
+            val pin = g.pin?.let { eval(it, root, g.name) }?.takeIf { it != Null }?.toString()
+            Triple(url, headers, pin)
+        }.collectLatest { (url, headers, pin) ->
+            if (url == Null) return@collectLatest status(false, "")
+            val job = currentCoroutineContext()[Job]
+            var wait = WS_RETRY_MS
+            while (true) {
+                val began = System.currentTimeMillis()
+                val err =
+                    try {
+                        services.webSocket(
+                            url.toString(),
+                            headers,
+                            pin,
+                            opened = { send ->
+                                // A connection that opened just as the page left is already closing.
+                                if (job?.isActive != false) {
+                                    senders[slot] = send
+                                    status(true, "")
+                                }
+                            },
+                            onText = { text ->
+                                out = if (g.json) Json.parseOrText(text) else Str(text)
+                                if (g.status) status(true, "") else write(slot, out)
+                                sample(g)
+                            },
+                        )
+                        // The server closed it; not an error, though it may end each one at once.
+                        ""
+                    } catch (e: java.io.IOException) {
+                        e.message ?: e.toString()
+                    } finally {
+                        senders.remove(slot)
+                        // Closed as the page left too, so `when x.open` greets the next connection.
+                        status(false, "")
+                    }
+                if (err.isNotEmpty()) status(false, err)
+                if (!g.status && err.isNotEmpty()) report("${g.name}: $err")
+                // A connection that held for a while starts the waits over; one that keeps failing waits up to a minute.
+                if (System.currentTimeMillis() - began > WS_STEADY_MS) wait = WS_RETRY_MS
+                delay(wait)
+                wait = (wait * 2).coerceAtMost(WS_MAX_RETRY_MS)
+            }
+        }
+    }
+
+    override fun send(
+        slot: Int,
+        message: Value,
+    ) {
+        val text = if (message is Obj || message is Lst) Json.write(message) ?: return report("send: a message with colors or functions in it isn't JSON") else message.toString()
+        val send = senders[slot] ?: return report("send: ${program.globals[slot].name} isn't connected")
+        if (!send(text)) report("send: ${program.globals[slot].name}'s connection is closing")
     }
 
     /**
@@ -1020,6 +1113,13 @@ class WidgetInstance(
 
         /** How soon a failed http fetch is tried again, if its interval is longer. */
         private const val RETRY_MS = 30_000L
+
+        /** How long a ws(...) source waits before connecting again, at first and at most. */
+        private const val WS_RETRY_MS = 1_000L
+        private const val WS_MAX_RETRY_MS = 60_000L
+
+        /** A connection that lasted this long was working, and the next one waits [WS_RETRY_MS] again. */
+        private const val WS_STEADY_MS = 30_000L
 
         /** How long a post(...) may take: a sign-in or a change, sent once and never retried. */
         private const val POST_TIMEOUT_S = 30

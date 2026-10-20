@@ -59,6 +59,12 @@ interface Host {
         pin: String?,
     ) {}
 
+    /** `send(source, message)` in a handler: [message] on the connection of the ws(...) source in [slot], a map or list as JSON. */
+    fun send(
+        slot: Int,
+        message: Value,
+    ) {}
+
     val budget: Budget
 
     /** A problem at run time, shown to the widget's author; never thrown. */

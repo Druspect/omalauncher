@@ -124,7 +124,9 @@ internal val SINCE =
         // owl 12: servers with a certificate of their own, pinned; requests other than POST; base64 text.
         listOf(HTTP_PIN, POST_METHOD, "fromBase64", "toBase64").associateWith { 12 } +
         // owl 12: tokens kept encrypted, which only go into requests, and fields that hide what's typed.
-        listOf(SECRET, "Input.password").associateWith { 12 }
+        listOf(SECRET, "Input.password").associateWith { 12 } +
+        // owl 12: WebSockets, a server's messages as a source and messages back to it.
+        listOf("ws", "send").associateWith { 12 }
 
 /** `state x = null secret`, named like this in [SINCE]. */
 internal const val SECRET = "secret"
