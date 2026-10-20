@@ -130,8 +130,8 @@ class WidgetEngine(
     /** All three, in the store's order. */
     val markets get() = listOf(market, faceMarket, appMarket)
 
-    /** The store for [kind]. */
-    fun market(kind: OwlKind) = markets.first { it.kind == kind }
+    /** The store for [kind]; panels have none, so they get the widgets'. */
+    fun market(kind: OwlKind) = markets.firstOrNull { it.kind == kind } ?: market
 
     /** Settings' "update all" for widgets and apps is running. */
     var updating by mutableStateOf(false)

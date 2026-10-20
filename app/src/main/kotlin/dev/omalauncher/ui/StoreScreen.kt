@@ -103,7 +103,7 @@ fun StoreScreen(
             onBack = if (alone != null) back else LocalPanelBack.current,
             actions = {
                 if (alone == null) {
-                    KindToggle(kind) {
+                    KindToggle(kind, engine.markets.map { it.kind }) {
                         kind = it
                         open = null
                         message = null
@@ -169,10 +169,12 @@ fun StoreScreen(
 @Composable
 private fun KindToggle(
     kind: OwlKind,
+    /** The kinds the store has; panels have none. */
+    kinds: List<OwlKind>,
     onPick: (OwlKind) -> Unit,
 ) {
     Row(Modifier.padding(end = 4.dp).frame(1.dp, Palette.border, radius = 14.dp).clip(RoundedCornerShape(14.dp))) {
-        for (k in OwlKind.entries) {
+        for (k in kinds) {
             val label = "${k.word}s"
             val on = k == kind
             BasicText(
