@@ -607,7 +607,9 @@ says whether it's connected (a `when term.open { ... }` greets each new connecti
 last one failed, which isn't reported as an error then. Messages are text, up to 1 MB each; binary ones
 are skipped. Each message replaces the last, so a server that sends changes rather than whole states
 needs an `on term { ... }` that adds them up in a state. A connection quiet for 30 s is pinged, and
-one that doesn't answer in another 30 s counts as dropped. No compression, subprotocols or proxies.
+one that doesn't answer in another 30 s counts as dropped. At most 8 are open at once, all widgets
+together. No compression, subprotocols or proxies. On Android 17 a server on your network needs the
+launcher's local network permission (settings, local network), as `http` does.
 
 ## Sounds
 

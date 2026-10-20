@@ -43,6 +43,7 @@ import dev.omalauncher.linux.GuestShell
 import dev.omalauncher.linux.Proot
 import dev.omalauncher.linux.ShellPool
 import dev.omalauncher.linux.ShellResult
+import dev.omalauncher.LocalNetwork
 import dev.omalauncher.SecretBox
 import dev.omalauncher.WebSocket
 import dev.omalauncher.openHttp
@@ -109,6 +110,7 @@ import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 import kotlin.coroutines.resume
@@ -116,6 +118,9 @@ import kotlin.coroutines.resumeWithException
 import javax.net.ssl.HttpsURLConnection
 
 private const val MAX_HTTP_BYTES = 1 shl 20
+
+/** WebSockets open at once; a widget's page and its neighbours are live together. */
+private const val MAX_WEBSOCKETS = 8
 
 /**
  * How often `android.drawer` changes at most. Icons load one at a time, and each changes `hasIcon`: without this a
@@ -622,7 +627,7 @@ class WidgetServices(
                     connection.disconnect()
                 }
             } catch (e: IOException) {
-                ShellResult("", e.message ?: e.toString(), -1)
+                ShellResult("", listOfNotNull(e.message ?: e.toString(), LocalNetwork.hint(context, url)).joinToString("; "), -1)
             }
         }
 
@@ -634,6 +639,30 @@ class WidgetServices(
         onText: (String) -> Unit,
     ) {
         val pinned = pin?.let { Pins.normalize(it) ?: throw IOException("pin: isn't a SHA-256 (64 hex digits): $it") }
+        // Each holds a thread and a connection the whole time its page shows.
+        if (webSockets.incrementAndGet() > MAX_WEBSOCKETS) {
+            webSockets.decrementAndGet()
+            throw IOException("over $MAX_WEBSOCKETS WebSockets are open at once on the pages around this one")
+        }
+        try {
+            connectWebSocket(url, headers, pinned, opened, onText)
+        } catch (e: IOException) {
+            throw withContext(Dispatchers.IO) { LocalNetwork.hint(context, url) }?.let { IOException("${e.message}; $it", e) } ?: e
+        } finally {
+            webSockets.decrementAndGet()
+        }
+    }
+
+    /** WebSocket connections open now, all widgets together. */
+    private val webSockets = AtomicInteger()
+
+    private suspend fun connectWebSocket(
+        url: String,
+        headers: Map<String, String>,
+        pinned: String?,
+        opened: ((String) -> Boolean) -> Unit,
+        onText: (String) -> Unit,
+    ) {
         val socket = AtomicReference<WebSocket?>()
         val gone = AtomicBoolean()
         suspendCancellableCoroutine { cont ->
