@@ -47,13 +47,16 @@ interface Host {
 
     /**
      * `post(url, body, headers)` in a handler: an HTTP POST, with a map or list [body] sent as JSON. With a
-     * [slot] (`x = post(...)`), the answer goes there as `{code, ok, out}` when it arrives.
+     * [slot] (`x = post(...)`), the answer goes there as `{code, ok, out}` when it arrives. [method] is
+     * `method:`'s (PUT, DELETE), and [pin] is `pin:`'s certificate hash.
      */
     fun post(
         url: String,
         body: Value,
         headers: Map<String, String>,
         slot: Int?,
+        method: String,
+        pin: String?,
     ) {}
 
     val budget: Budget
@@ -241,6 +244,8 @@ sealed interface Global {
         val status: Boolean = false,
         /** http(url, headers): the request headers, a map. */
         val headers: Ev? = null,
+        /** http(..., pin: "…"): the SHA-256 of the only certificate the server may show. */
+        val pin: Ev? = null,
         /** cmd, stream or file that runs only while Linux is installed, and stays null until then. */
         val optional: Boolean = false,
     ) : Global

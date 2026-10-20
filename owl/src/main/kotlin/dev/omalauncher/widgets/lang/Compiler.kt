@@ -301,6 +301,10 @@ class Compiler private constructor(
         val tree = items(body.items, root, Children.UI)
         if (tree.isEmpty()) fail("an app needs at least one node, like Text { text: \"hi\" }", 0)
         openScreen?.let { fail("screen() opens a widget's screen { }; an app is open already, and close() closes it", it) }
+        // Before the level check, which counts what they use.
+        val title = body.props.firstOrNull { it.name == "title" }?.let { ex(it.value, root) }
+        val back = backProp?.let { ex(it.value, root) }
+        val onBack = onBackHandler?.let { handler(it, root) }
         checkLevel(level)
         return Program(
             name = ast.name ?: "app",
@@ -308,9 +312,9 @@ class Compiler private constructor(
             level = level,
             globals = globals,
             screen = tree,
-            screenTitle = body.props.firstOrNull { it.name == "title" }?.let { ex(it.value, root) },
-            back = backProp?.let { ex(it.value, root) },
-            onBack = onBackHandler?.let { handler(it, root) },
+            screenTitle = title,
+            back = back,
+            onBack = onBack,
             edge = edge,
             statusBar = statusBar,
             triggers = triggers,
@@ -355,6 +359,7 @@ class Compiler private constructor(
         openScreen?.let { fail("screen() opens a widget's screen { }; a panel is open already, and close() closes it", it) }
         val onSubmit = body.handlers.firstOrNull { it.name == "onSubmit" }?.let { handler(it, root) }
         val onKey = body.handlers.firstOrNull { it.name == "onKey" }?.let { since("onKey", it.pos); handler(it, root) }
+        val enter = body.props.firstOrNull { it.name == "enter" }?.let { ex(it.value, root) }
         checkLevel(level)
         return Program(
             name = ast.name ?: "panel",
@@ -364,7 +369,7 @@ class Compiler private constructor(
             screen = tree,
             onSubmit = onSubmit,
             onKey = onKey,
-            enter = body.props.firstOrNull { it.name == "enter" }?.let { ex(it.value, root) },
+            enter = enter,
             triggers = triggers,
             commands = commands.toList(),
             warnings = warnings.toList(),
@@ -558,12 +563,14 @@ class Compiler private constructor(
         val timeout = d.timeout?.let { constant(it, "timeout").num()?.toInt() } ?: 10
         return when {
             e is Expr.Call && e.name == "http" -> {
-                if (e.args.size !in 1..2 || e.named.isNotEmpty()) fail("http(\"https://...\") takes a URL and optionally a map of headers", e.pos)
+                if (e.args.size !in 1..2) fail("http(\"https://...\") takes a URL and optionally a map of headers", e.pos)
+                for ((k, v) in e.named) if (k != "pin") fail("http takes pin: and no other named arguments", v.pos)
                 val url = ex(e.args[0], root)
                 (url.const as? Str)?.v?.let { if (!it.startsWith("https://") && !it.startsWith("http://")) fail("http takes an http:// or https:// URL", e.args[0].pos) }
                 // Like a command's sh(...) values: listed by shape when the host is fixed and each value is enc(...) or a number.
                 listUrl("http GET", e.args[0], url, root)
-                Global.Source(d.name, "http", url, (every ?: 60.0).coerceAtLeast(5.0), d.json, timeout.coerceIn(1, 300), d.status, e.args.getOrNull(1)?.let { ex(it, root) })
+                val pin = pin(e, url, root)
+                Global.Source(d.name, "http", url, (every ?: 60.0).coerceAtLeast(5.0), d.json, timeout.coerceIn(1, 300), d.status, e.args.getOrNull(1)?.let { ex(it, root) }, pin)
             }
             e is Expr.Call && e.name in setOf("cmd", "stream") -> {
                 if (e.args.size != 1 || e.named.isNotEmpty()) fail("${e.name}(\"command\") takes one command", e.pos)
@@ -992,21 +999,47 @@ class Compiler private constructor(
         scope: Scope,
         slot: Int?,
     ): (Env) -> Unit {
-        if (call.args.size !in 1..3 || call.named.isNotEmpty()) fail("post(\"https://...\", body, headers) takes a URL, optionally a body and a map of headers", call.pos)
+        if (call.args.size !in 1..3) fail("post(\"https://...\", body, headers) takes a URL, optionally a body and a map of headers", call.pos)
+        for ((k, v) in call.named) if (k != "pin" && k != "method") fail("post takes pin: and method:, and no other named arguments", v.pos)
         since("post", call.pos)
         val url = ex(call.args[0], scope)
         (url.const as? Str)?.v?.let { if (!it.startsWith("https://") && !it.startsWith("http://")) fail("post takes an http:// or https:// URL", call.args[0].pos) }
-        listUrl("http POST", call.args[0], url, scope)
+        // A constant, so the reviewer reads what it does: "http DELETE https://…".
+        val method =
+            call.named.firstOrNull { it.first == "method" }?.second?.let { m ->
+                since(POST_METHOD, m.pos)
+                (constant(m, "method").let { it as? Str }?.v?.uppercase())?.takeIf { it in POST_METHODS }
+                    ?: fail("method: is one of ${POST_METHODS.joinToString { "\"$it\"" }}", m.pos)
+            } ?: "POST"
+        listUrl("http $method", call.args[0], url, scope)
         val body = call.args.getOrNull(1)?.let { ex(it, scope) }
         val headers = call.args.getOrNull(2)?.let { ex(it, scope) }
+        val pin = pin(call, url, scope)
         return { env ->
             val target = url(env)
             // Like any action whose value hasn't loaded: a null URL sends nothing.
             if (target != Null) {
                 val h = (headers?.invoke(env) as? Obj)?.fields.orEmpty().mapValues { it.value.toString() }
-                env.host.post(target.toString(), body?.invoke(env) ?: Null, h, slot)
+                env.host.post(target.toString(), body?.invoke(env) ?: Null, h, slot, method, pin?.invoke(env)?.takeIf { it != Null }?.toString())
             }
         }
+    }
+
+    /**
+     * `pin: "…"` on [call], http(...) or post(...): the SHA-256 of the one certificate its HTTPS server
+     * may show, as hex (colons allowed, as openssl prints it), checked here when it's a constant.
+     */
+    private fun pin(
+        call: Expr.Call,
+        url: Ev,
+        scope: Scope,
+    ): Ev? {
+        val e = call.named.firstOrNull { it.first == "pin" }?.second ?: return null
+        since(HTTP_PIN, e.pos)
+        (url.const as? Str)?.v?.let { if (!it.startsWith("https://")) fail("pin: needs an https:// URL", call.args[0].pos) }
+        val pin = ex(e, scope)
+        (pin.const as? Str)?.v?.let { if (Pins.normalize(it) == null) fail("pin: is a certificate's SHA-256 as 64 hex digits, like openssl x509 -noout -fingerprint -sha256 prints it", e.pos) }
+        return pin
     }
 
     /** Lists an http URL for the reviewer, by shape when the host is fixed and each value in it is enc(...) or a number. */

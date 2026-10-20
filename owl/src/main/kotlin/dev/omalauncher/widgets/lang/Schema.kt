@@ -120,7 +120,18 @@ internal val SINCE =
         listOf(PANEL_FILE, QUERY, "onKey", "android.drawer", "appAction", "workApps", "shortcuts", APP_STATUS_BAR).associateWith { 11 } +
         listOf("Column.lazy", "Grid.lazy", "Column.reverse", "Grid.reverse", "Image.label", "Text.minLines", "rank", "strongMatch", "chunk").associateWith { 11 } +
         // owl 12: how much of an app's top a camera cutout covers, once it hides the status bar.
-        mapOf("screenTop" to 12)
+        mapOf("screenTop" to 12) +
+        // owl 12: servers with a certificate of their own, pinned; requests other than POST; base64 text.
+        listOf(HTTP_PIN, POST_METHOD, "fromBase64", "toBase64").associateWith { 12 }
+
+/** `pin:` on http(...) and post(...), named like this in [SINCE]. */
+internal const val HTTP_PIN = "pin:"
+
+/** `method:` on post(...), named like this in [SINCE]. */
+internal const val POST_METHOD = "method:"
+
+/** The methods post(...) sends; Android's HttpURLConnection has no PATCH. */
+internal val POST_METHODS = setOf("POST", "PUT", "DELETE")
 
 internal const val FACE_FILE = "face \"…\" { }"
 

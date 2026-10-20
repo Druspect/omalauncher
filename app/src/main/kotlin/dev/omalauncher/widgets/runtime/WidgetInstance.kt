@@ -74,7 +74,8 @@ interface Services {
     ): ShellResult
 
     /**
-     * An HTTP request from Android, not the guest: a GET, or a POST of [body] for `post(...)`.
+     * An HTTP request from Android, not the guest: a GET, or a POST (or [method]) of [body] for
+     * `post(...)`; with a [pin], to an HTTPS server with that certificate only.
      * [ShellResult.code] is the HTTP status, or -1 if the request failed.
      */
     suspend fun http(
@@ -82,6 +83,8 @@ interface Services {
         headers: Map<String, String>,
         timeoutSeconds: Int,
         body: ByteArray? = null,
+        method: String = "POST",
+        pin: String? = null,
     ): ShellResult
 
     /**
@@ -389,6 +392,8 @@ class WidgetInstance(
         body: Value,
         headers: Map<String, String>,
         slot: Int?,
+        method: String,
+        pin: String?,
     ) {
         // A map or list goes as JSON, anything else as its text.
         val json = if (body is Obj || body is Lst) Json.write(body) else null
@@ -396,7 +401,7 @@ class WidgetInstance(
         val sent = if (json != null && headers.keys.none { it.equals("Content-Type", true) }) headers + ("Content-Type" to "application/json") else headers
         val scope = scope ?: return
         scope.launch {
-            val r = services.http(url, sent, POST_TIMEOUT_S, bytes)
+            val r = services.http(url, sent, POST_TIMEOUT_S, bytes, method, pin)
             val ok = r.code in 200..299
             // `x = post(...)` gets the answer and handles it (a sign-in polled while pending is a 400 each time).
             if (!ok && slot == null) report("post: ${httpFailure(r)}")
@@ -867,7 +872,8 @@ class WidgetInstance(
                         val r =
                             if (g.kind == "http") {
                                 val headers = (g.headers?.let { eval(it, root, g.name) } as? Obj)?.fields.orEmpty().mapValues { it.value.toString() }
-                                services.http(target, headers, g.timeout)
+                                val pin = g.pin?.let { eval(it, root, g.name) }?.takeIf { it != Null }?.toString()
+                                services.http(target, headers, g.timeout, pin = pin)
                             } else {
                                 services.cmd(target, g.timeout)
                             }

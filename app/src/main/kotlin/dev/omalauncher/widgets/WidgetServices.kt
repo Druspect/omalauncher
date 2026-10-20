@@ -44,12 +44,14 @@ import dev.omalauncher.linux.Proot
 import dev.omalauncher.linux.ShellPool
 import dev.omalauncher.linux.ShellResult
 import dev.omalauncher.openHttp
+import dev.omalauncher.pin
 import dev.omalauncher.openUrl
 import dev.omalauncher.readUpTo
 import dev.omalauncher.sha256Hex
 import dev.omalauncher.upgrade.writeAtomically
 import dev.omalauncher.widgets.lang.Builtins
 import dev.omalauncher.widgets.lang.Lst
+import dev.omalauncher.widgets.lang.Pins
 import dev.omalauncher.widgets.lang.Null
 import dev.omalauncher.widgets.lang.Num
 import dev.omalauncher.widgets.lang.Obj
@@ -102,6 +104,7 @@ import java.io.File
 import java.io.IOException
 import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
+import javax.net.ssl.HttpsURLConnection
 
 private const val MAX_HTTP_BYTES = 1 shl 20
 
@@ -576,19 +579,30 @@ class WidgetServices(
         headers: Map<String, String>,
         timeoutSeconds: Int,
         body: ByteArray?,
+        method: String,
+        pin: String?,
     ): ShellResult =
         withContext(Dispatchers.IO) {
             if (!url.startsWith("https://") && !url.startsWith("http://")) return@withContext ShellResult("", "not an http(s) URL: $url", -1)
+            val pinned =
+                pin?.let {
+                    if (!url.startsWith("https://")) return@withContext ShellResult("", "pin: needs an https:// URL: $url", -1)
+                    Pins.normalize(it) ?: return@withContext ShellResult("", "pin: isn't a SHA-256 (64 hex digits): $it", -1)
+                }
             try {
                 val connection = openHttp(url, timeoutSeconds * 1000, timeoutSeconds * 1000)
                 try {
+                    if (pinned != null) (connection as HttpsURLConnection).pin(pinned)
                     connection.setRequestProperty("User-Agent", "omalauncher-widgets")
                     headers.forEach { (k, v) -> connection.setRequestProperty(k, v) }
                     if (body != null) {
-                        connection.requestMethod = "POST"
-                        connection.doOutput = true
-                        connection.setFixedLengthStreamingMode(body.size)
-                        connection.outputStream.use { it.write(body) }
+                        connection.requestMethod = method
+                        // A DELETE usually has no body, and some servers refuse one.
+                        if (method != "DELETE" || body.isNotEmpty()) {
+                            connection.doOutput = true
+                            connection.setFixedLengthStreamingMode(body.size)
+                            connection.outputStream.use { it.write(body) }
+                        }
                     }
                     val code = connection.responseCode
                     val stream = if (code >= 400) connection.errorStream else connection.inputStream

@@ -66,7 +66,7 @@ that read it redraw. Properties are separated by newlines or `;`.
 |---|---|
 | `source x = cmd("...") every 5s` | runs a bash command in this Arch system; `x` is its output (stdout, trimmed). Add `json` to parse JSON output, `timeout 30s` to allow more than 10 s, `status` to get `{out, err, code, ok}` instead (see below), `optional` to let the widget work without Linux (see Without Linux). Default interval: 60 s |
 | `source x = stream("...")` | a long-running command; every line it prints becomes the new value. Add `json` for JSON lines. At most 4 different streams run at once |
-| `source x = http("https://...") every 10m` | an HTTP GET from Android, no curl or shell needed. Takes `json`, `timeout` and `status` like cmd (with `status`, `code` is the HTTP status and `ok` means 2xx), and optionally headers: `http(url, {Accept: "application/json"})`. The response is capped at 1 MB and the interval at 5 s or more. Prefer it over `cmd("curl ...")`. A URL can hold values, through `enc()` (see Values in URLs); it's fetched again as soon as it changes, and a `null` URL pauses the source, keeping its last value: `http(tab == "news" ? "https://..." : null)` fetches only while that tab shows. A failed fetch (offline, an error status, a rate limit) is tried again after 30 s |
+| `source x = http("https://...") every 10m` | an HTTP GET from Android, no curl or shell needed. Takes `json`, `timeout` and `status` like cmd (with `status`, `code` is the HTTP status and `ok` means 2xx), and optionally headers: `http(url, {Accept: "application/json"})`, and `pin:` for a server with a certificate of its own (owl 12, see Sending). The response is capped at 1 MB and the interval at 5 s or more. Prefer it over `cmd("curl ...")`. A URL can hold values, through `enc()` (see Values in URLs); it's fetched again as soon as it changes, and a `null` URL pauses the source, keeping its last value: `http(tab == "news" ? "https://..." : null)` fetches only while that tab shows. A failed fetch (offline, an error status, a rate limit) is tried again after 30 s |
 | `source x = file("~/.cache/x.json")` | a file in this system, read again whenever it changes (no polling, no shell). Add `json` to parse it. A missing file reads as `""`; at most 1 MB is read. Prefer it over `cmd("cat ...") every 5s` (owl 4) |
 | `source now = clock every 1s` | Unix time in seconds, with no shell involved. Use `fmtTime(now, "HH:mm")` |
 | `source bat = android.battery` | `{level, charging, status, temp, voltage, health, plugged, technology, cycles}` from Android, updated as it changes (`temp` in °C, `voltage` in V; `health`, `plugged`, `technology` and `cycles` are null when the phone doesn't say) |
@@ -89,7 +89,7 @@ that read it redraw. Properties are separated by newlines or `;`.
 | `asset logo = base64"iVBOR..."` | an embedded image (under 2 MB) for `Image { src: logo }`, or a font for `font: logo` (owl 10, see Fonts), so the widget is one self-contained file |
 | `requires { pacman: ["jq", "curl"] }` | packages the widget's commands need; see Dependencies |
 | `meta { description: "..."; version: "1.0"; license: "MIT"; category: "news" }` | needed to publish to the widget store (see Sharing) |
-| `meta { owl: 11 }` | the language version the widget needs (this launcher has 12; the default is 1). Older launchers say "update the launcher" instead of failing on what they don't know. `Terminal` needs 2, `sprite` 3, triggers, `file`, `Slider`, `Input`, `android.notifications`, `android.volume`, `volume` and `notification` need 4, and `screen { }`, `screen()`, `close()`, `screenWidth` and `screenHeight` need 5, `Input`'s `focus`, `sh()` and `corners` 6, and `android.alarm`, `android.modes`, `torch`, `share` and `haptic` 7, and `app "…" { }` files, `android.apps`, `enc`, `post`, images from the web, `sound` and `screenInset` 8, and `parseTime`, `fmtAgo`, `fmtNum`, `random`, `shuffle`, `hash`, `fmtTime`'s zone and language, `set`, `remove`, `merge`, `reduce`, `scan`, `groupBy`, `toJson`, `capitalize`, `asin`, `acos`, `flatten`'s depth, `on … first`, and `if` and `let` in handlers 9, and `face "…" { }` files, `onLongPress`, Text's `spans`, `fontWeight` and `letterSpacing`, gradient backgrounds, `frost`, fonts of a widget's own and Canvas `text`'s `font`, `fontWeight`, `italic` and `letterSpacing`, `android.agents`, `android.recent`, `open`, `ask`, `Popup` and Input's `underline` 10, and `android.drawer`, `appAction`, `workApps`, `rank`, `strongMatch`, `chunk`, Column's and Grid's `lazy`, `panel "…" { }` files with `query`, `enter`, `onSubmit` and `onKey`, `shortcuts`, Column's and Grid's `reverse`, Image's `label`, Text's `minLines`, an app's `statusBar` and a Column in a Row as wide as its content 11, and `screenTop` 12; using them without declaring it is an error |
+| `meta { owl: 11 }` | the language version the widget needs (this launcher has 12; the default is 1). Older launchers say "update the launcher" instead of failing on what they don't know. `Terminal` needs 2, `sprite` 3, triggers, `file`, `Slider`, `Input`, `android.notifications`, `android.volume`, `volume` and `notification` need 4, and `screen { }`, `screen()`, `close()`, `screenWidth` and `screenHeight` need 5, `Input`'s `focus`, `sh()` and `corners` 6, and `android.alarm`, `android.modes`, `torch`, `share` and `haptic` 7, and `app "…" { }` files, `android.apps`, `enc`, `post`, images from the web, `sound` and `screenInset` 8, and `parseTime`, `fmtAgo`, `fmtNum`, `random`, `shuffle`, `hash`, `fmtTime`'s zone and language, `set`, `remove`, `merge`, `reduce`, `scan`, `groupBy`, `toJson`, `capitalize`, `asin`, `acos`, `flatten`'s depth, `on … first`, and `if` and `let` in handlers 9, and `face "…" { }` files, `onLongPress`, Text's `spans`, `fontWeight` and `letterSpacing`, gradient backgrounds, `frost`, fonts of a widget's own and Canvas `text`'s `font`, `fontWeight`, `italic` and `letterSpacing`, `android.agents`, `android.recent`, `open`, `ask`, `Popup` and Input's `underline` 10, and `android.drawer`, `appAction`, `workApps`, `rank`, `strongMatch`, `chunk`, Column's and Grid's `lazy`, `panel "…" { }` files with `query`, `enter`, `onSubmit` and `onKey`, `shortcuts`, Column's and Grid's `reverse`, Image's `label`, Text's `minLines`, an app's `statusBar` and a Column in a Row as wide as its content 11, and `screenTop`, `pin:` and `method:` on `http`/`post`, `toBase64` and `fromBase64` 12; using them without declaring it is an error |
 | `onTap: ...` | runs when the tile (not a button inside it) is tapped |
 | `screen { ... }` | a full-screen view of the widget, opened with `screen()`; see Screens (owl 5) |
 | `every 10s { ... }`, `at t { ... }`, `when c { ... }`, `on x { ... }` | statements that run without a tap; see Triggers |
@@ -196,7 +196,7 @@ second is held back and reported (one that changes what it watches would otherwi
 | text | `sh(x)` (one shell word, see Values in commands), `enc(x)` (one URL component, see Values in URLs) `str len trim upper lower capitalize lines words split(s, sep) join(list, sep) replace(s, a, b) contains startsWith endsWith sub(s, from, to) pad(x, width, char) fixed(x, digits)` |
 | format | `fmtBytes(n)` → `1.5G`, `fmtDuration(seconds)` → `2h 5m`, `fmtTime(seconds, "EEE HH:mm")`, `fmtAgo(t, now)` → `5m`, `fmtNum(n)` → `12,345`; see Dates and numbers |
 | weather | `weatherIcon(code, night)`: omarchy's weather glyph for a wttr.in `weatherCode` (show it with `font: icon`) |
-| parsing | `match(s, regex)` (groups of the first match), `matchAll(s, regex)`, `parseJson(s)`, `toJson(x)` (JSON text), `parseTime(s)` (a date in text as Unix seconds) |
+| parsing | `match(s, regex)` (groups of the first match), `matchAll(s, regex)`, `parseJson(s)`, `toJson(x)` (JSON text), `parseTime(s)` (a date in text as Unix seconds), `toBase64(s)` and `fromBase64(s)` (also base64url, padded or not; null if it isn't base64) (owl 12) |
 | chance | `random()`, `random(n)`, `random(a, b)`, `shuffle(list)`, only in handlers and a state's first value; `hash(...)` and `shuffle(list, seed)` anywhere. See Chance |
 | lists | `range(n)` or `range(a, b, step)`, `map filter find any all count sum avg sort sortBy reverse take drop first last indexOf unique`, `chunk(list, n)` (the list in lists of `n`, the last one shorter: rows for a grid with full-width headings, owl 11), `flatten(list, depth)` (depth 1 unless given), `keys values entries get(obj, key, default)`; see Changing lists and maps |
 | search | `rank(list, query)`: what matches `query`, best first, as the prompt bar ranks apps: a whole name, then its start, the starts of its words, its initials, a part of it, and its letters in order, ignoring case and accents. A map matches by its `name` and `alias` and ranks higher with its `score`, so `rank(d.apps, q)` over `android.drawer` finds what the bar finds; a text matches as it is. `strongMatch(a, query)` is true when the bar would open `a` on Enter rather than ask the agent: what's typed names it well (its initials or better, by name or alias) and is one line of two words at most. It follows the bar as the launcher changes, so a drawer of your own keeps opening what the bar opens (owl 11) |
@@ -478,7 +478,7 @@ after it in its block (and blocks inside them), and needs a name not used for a 
 | `ask(text)` | opens a terminal with the default agent answering `text`, as sending it from the prompt bar does; `ask(text, "codex")` asks that installed agent. Without one installed it opens the agents settings. The store's reviewer sees what a widget asks (owl 10) |
 | `copy(text)` | copies text to the Android clipboard |
 | `notify("title", "text")` | posts an Android notification (if the launcher may post them) |
-| `post("https://...", body, headers)` | sends an HTTP POST from Android: a map or list `body` goes as JSON, text as it is; `headers` is a map like `http(...)`'s. `x = post(...)` puts the answer into the state `x` when it arrives: `{code, ok, out}`, with `out` parsed when it's JSON. Never retried; a null URL sends nothing. When it succeeds, the widget's sources run again. See Sending (owl 8) |
+| `post("https://...", body, headers)` | sends an HTTP POST from Android: a map or list `body` goes as JSON, text as it is; `headers` is a map like `http(...)`'s. `x = post(...)` puts the answer into the state `x` when it arrives: `{code, ok, out}`, with `out` parsed when it's JSON. `method: "PUT"` or `"DELETE"` sends that instead, and `pin:` trusts one certificate (owl 12). Never retried; a null URL sends nothing. When it succeeds, the widget's sources run again. See Sending (owl 8) |
 | `url("https://...")` | opens in the Android browser. Other links open in the app that takes them: `tel:` the dialer, `geo:` maps, `mailto:` email |
 | `share(text)` | opens Android's share sheet with the text (owl 7) |
 | `haptic()` | a short tap of haptic feedback, if the user has touch feedback on (owl 7) |
@@ -533,6 +533,26 @@ A `post` that only sometimes goes out goes in an `if` (owl 9):
 `every 5s { if code != "" { tok = post("https://…/token", {code: code}) } }` polls only while there is a
 code. Before owl 9 the same took a null URL, which sends nothing. The URLs are listed for review like `http(...)`'s, as `http POST https://…`, under the same rule:
 keep the server fixed and put values into the URL with `enc(...)`.
+
+`post(url, body, headers, method: "DELETE")` sends a DELETE (or `"PUT"`) instead, listed as `http DELETE
+https://…` (owl 12). Android has no PATCH.
+
+A server on your network with a certificate of its own (self-signed, as a NAS, a router or a desktop app
+makes one) isn't trusted by Android. `pin:` on `http(...)` or `post(...)` trusts that one certificate,
+by its SHA-256, and nothing else, at whatever address it answers (owl 12):
+
+```owl
+widget "pc" {
+  meta { owl: 12 }
+  state token = "" persist
+  source pc = http("https://192.168.1.20:8759/api/status", {Authorization: "Bearer ${token}"}, pin: "3F:A1:5C:0B:6E:2D:88:41:9A:C7:13:F0:52:BE:64:D9:07:A3:1E:C8:95:4F:2B:D6:70:18:E3:AC:59:06:B4:9C") every 10s json
+  Text { text: pc.hostname ?? "…" }
+}
+```
+
+The pin is what `openssl x509 -noout -fingerprint -sha256 -in cert.pem` prints, colons or not, and it can
+be a value: a pairing link's fingerprint, kept in a `persist` state. A server showing any other
+certificate fails with an error that says the SHA-256 it showed. A pinned request follows no redirects.
 
 ## Sounds
 
