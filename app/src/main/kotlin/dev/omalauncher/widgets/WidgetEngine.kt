@@ -443,6 +443,7 @@ class WidgetEngine(
     private fun forget(fileName: String) {
         layout.remove(fileName)
         File(stateDir, "$fileName.json").delete()
+        File(stateDir, "$fileName.secret").delete()
         hashes.remove(fileName)
         File(checkDir, "$fileName.txt").delete()
         File(previewDir, "$fileName.png").delete()

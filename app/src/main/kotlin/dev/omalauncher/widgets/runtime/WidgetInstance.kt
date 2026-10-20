@@ -93,6 +93,12 @@ interface Services {
      */
     suspend fun remoteFile(url: String): File? = null
 
+    /** `secret` states, encrypted with a key only this app can use; null without one, and they aren't kept. */
+    fun seal(plain: ByteArray): ByteArray? = null
+
+    /** What [seal] encrypted; null if it can't be read (another install's key, or damaged). */
+    fun unseal(sealed: ByteArray): ByteArray? = null
+
     /**
      * `sound(...)`: plays [file] or [bytes] for [owner], in place of what it was playing; both null
      * stops it. [failed] hears why one couldn't play.
@@ -216,6 +222,13 @@ class WidgetInstance(
 
     private var lastSaved: List<Value>? = null
 
+    /** Slots of `state ... secret`, kept beside [savedFile], sealed by [Services.seal]. */
+    private val secrets = program.globals.indices.filter { (program.globals[it] as? Global.State)?.secret == true }
+
+    private val secretFile = savedFile?.let { File(it.path.removeSuffix(".json") + ".secret") }
+
+    private var lastSealed: List<Value>? = null
+
     init {
         program.globals.forEachIndexed { i, g ->
             cells[i] =
@@ -229,6 +242,30 @@ class WidgetInstance(
         // State starts from its initial value; it may read sources, which are still null here.
         program.globals.forEachIndexed { i, g -> if (g is Global.State) write(i, eval(g.init, root, g.name)) }
         restore()
+        unseal()
+    }
+
+    private fun unseal() {
+        val file = secretFile?.takeIf { secrets.isNotEmpty() && it.exists() } ?: return
+        val text = runCatching { file.readBytes() }.getOrNull()?.let(services::unseal)?.toString(Charsets.UTF_8) ?: return
+        val saved = (runCatching { Json.parse(text) }.getOrNull() as? Obj)?.fields ?: return
+        for (i in secrets) saved[program.globals[i].name]?.let { write(i, it) }
+        lastSealed = secrets.map { read(it) }
+    }
+
+    /** Writes the secrets, sealed, if they changed; all unset deletes the file. */
+    private fun seal(values: List<Value>) {
+        val file = secretFile ?: return
+        if (values == lastSealed) return
+        runCatching {
+            if (values.all { it == Null || it == Str("") }) {
+                file.delete()
+            } else {
+                val json = Json.write(Obj(secrets.indices.associate { program.globals[secrets[it]].name to values[it] })) ?: return
+                writeAtomically(file, services.seal(json.toByteArray()) ?: error("no key to encrypt them with"))
+            }
+            lastSealed = values
+        }.onFailure { report("couldn't keep the secrets: ${it.message}") }
     }
 
     private fun restore() {
@@ -547,6 +584,12 @@ class WidgetInstance(
                     shown = now
                 }
             }
+        if (secrets.isNotEmpty() && secretFile != null) {
+            jobs +=
+                scope.launch {
+                    snapshotFlow { secrets.map { read(it) } }.collect { values -> withContext(Dispatchers.IO) { seal(values) } }
+                }
+        }
         if (persisted.isNotEmpty() && savedFile != null) {
             // At most one write every few seconds, however fast the sources sample.
             jobs +=
@@ -855,6 +898,7 @@ class WidgetInstance(
         terminals.clear()
         // A change made during the write interval would otherwise be lost.
         if (persisted.isNotEmpty()) save(persisted.map { read(it) })
+        if (secrets.isNotEmpty()) seal(secrets.map { read(it) })
     }
 
     /** Runs [g] and writes its value; false when an http fetch failed, so it's tried again soon. */

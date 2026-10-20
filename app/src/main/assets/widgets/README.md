@@ -82,6 +82,7 @@ that read it redraw. Properties are separated by newlines or `;`.
 | `source d = android.drawer` | the app drawer: `{apps, linux, monochrome, work, updates}`, updated as it changes. `apps` lists every app in the drawer's order, owl apps, Linux apps, shortcuts and Android apps, then the work profile's shortcuts and apps, each `{key, kind, name, label, icon, hasIcon, initials, profile, alias, paused, actions, score, last}`: `kind`, `icon`, `score` and `last` as in `android.recent`, `label` what screen readers should say for it, for an Image's `label` ("WhatsApp work"), `profile` as in `android.apps`, `alias` what search matches besides the name (`WhatsApp work`), `paused` for an app in a paused work profile (the drawer dims those), and `actions` the words of its long-press menu for `appAction(word, a.key)`. `hasIcon` is false while `icon` would draw nothing (no icon, or not loaded yet), when the drawer shows `initials` on a badge instead; `monochrome` on `d` says icons are silhouettes, which the drawer puts on a badge too. `d.linux` is `installed`, `installing` or `missing`; `d.work` is `{paused}` while there's a work profile, else null; `d.updates` is how many system updates wait, the dot on the drawer's settings button. `open(a.key)` opens one (owl 11) |
 | `source m = android.modes` | the phone's modes: `{dnd, saver, ringer, torch}`, updated as they change. `dnd` is Do Not Disturb in any form, `saver` battery saver, `ringer` is `normal`, `vibrate` or `silent`, and `torch` is null on a phone without a flash. Switch the torch with `torch(...)` (owl 7) |
 | `state x = 0` | a value that handlers can change. Add `persist` to keep it across restarts: `state endsAt = 0 persist` |
+| `state token = null secret` | a token or password: kept across restarts encrypted, never in the persisted values, and it only goes into `http(...)`'s and `post(...)`'s headers and body, or `token == null` (or `!= ""`) to see whether it's set; anything else that reads it is an error. See Sending (owl 12) |
 | `let x = expr` | a derived value, recomputed only when what it reads changes. It can use sources, state and earlier lets |
 | `let h = history(x, 60)` | the last 60 values of `x`, sampled whenever a source updates (for Sparkline). With `persist` it survives restarts, unless it's older than it would take to fill |
 | `let p = prev(x)` | the previous value of `x`, for rates: `let rate = (bytes - p) / 5` |
@@ -89,7 +90,7 @@ that read it redraw. Properties are separated by newlines or `;`.
 | `asset logo = base64"iVBOR..."` | an embedded image (under 2 MB) for `Image { src: logo }`, or a font for `font: logo` (owl 10, see Fonts), so the widget is one self-contained file |
 | `requires { pacman: ["jq", "curl"] }` | packages the widget's commands need; see Dependencies |
 | `meta { description: "..."; version: "1.0"; license: "MIT"; category: "news" }` | needed to publish to the widget store (see Sharing) |
-| `meta { owl: 11 }` | the language version the widget needs (this launcher has 12; the default is 1). Older launchers say "update the launcher" instead of failing on what they don't know. `Terminal` needs 2, `sprite` 3, triggers, `file`, `Slider`, `Input`, `android.notifications`, `android.volume`, `volume` and `notification` need 4, and `screen { }`, `screen()`, `close()`, `screenWidth` and `screenHeight` need 5, `Input`'s `focus`, `sh()` and `corners` 6, and `android.alarm`, `android.modes`, `torch`, `share` and `haptic` 7, and `app "…" { }` files, `android.apps`, `enc`, `post`, images from the web, `sound` and `screenInset` 8, and `parseTime`, `fmtAgo`, `fmtNum`, `random`, `shuffle`, `hash`, `fmtTime`'s zone and language, `set`, `remove`, `merge`, `reduce`, `scan`, `groupBy`, `toJson`, `capitalize`, `asin`, `acos`, `flatten`'s depth, `on … first`, and `if` and `let` in handlers 9, and `face "…" { }` files, `onLongPress`, Text's `spans`, `fontWeight` and `letterSpacing`, gradient backgrounds, `frost`, fonts of a widget's own and Canvas `text`'s `font`, `fontWeight`, `italic` and `letterSpacing`, `android.agents`, `android.recent`, `open`, `ask`, `Popup` and Input's `underline` 10, and `android.drawer`, `appAction`, `workApps`, `rank`, `strongMatch`, `chunk`, Column's and Grid's `lazy`, `panel "…" { }` files with `query`, `enter`, `onSubmit` and `onKey`, `shortcuts`, Column's and Grid's `reverse`, Image's `label`, Text's `minLines`, an app's `statusBar` and a Column in a Row as wide as its content 11, and `screenTop`, `pin:` and `method:` on `http`/`post`, `toBase64` and `fromBase64` 12; using them without declaring it is an error |
+| `meta { owl: 11 }` | the language version the widget needs (this launcher has 12; the default is 1). Older launchers say "update the launcher" instead of failing on what they don't know. `Terminal` needs 2, `sprite` 3, triggers, `file`, `Slider`, `Input`, `android.notifications`, `android.volume`, `volume` and `notification` need 4, and `screen { }`, `screen()`, `close()`, `screenWidth` and `screenHeight` need 5, `Input`'s `focus`, `sh()` and `corners` 6, and `android.alarm`, `android.modes`, `torch`, `share` and `haptic` 7, and `app "…" { }` files, `android.apps`, `enc`, `post`, images from the web, `sound` and `screenInset` 8, and `parseTime`, `fmtAgo`, `fmtNum`, `random`, `shuffle`, `hash`, `fmtTime`'s zone and language, `set`, `remove`, `merge`, `reduce`, `scan`, `groupBy`, `toJson`, `capitalize`, `asin`, `acos`, `flatten`'s depth, `on … first`, and `if` and `let` in handlers 9, and `face "…" { }` files, `onLongPress`, Text's `spans`, `fontWeight` and `letterSpacing`, gradient backgrounds, `frost`, fonts of a widget's own and Canvas `text`'s `font`, `fontWeight`, `italic` and `letterSpacing`, `android.agents`, `android.recent`, `open`, `ask`, `Popup` and Input's `underline` 10, and `android.drawer`, `appAction`, `workApps`, `rank`, `strongMatch`, `chunk`, Column's and Grid's `lazy`, `panel "…" { }` files with `query`, `enter`, `onSubmit` and `onKey`, `shortcuts`, Column's and Grid's `reverse`, Image's `label`, Text's `minLines`, an app's `statusBar` and a Column in a Row as wide as its content 11, and `screenTop`, `pin:` and `method:` on `http`/`post`, `toBase64`, `fromBase64`, `secret` states and Input's `password` 12; using them without declaring it is an error |
 | `onTap: ...` | runs when the tile (not a button inside it) is tapped |
 | `screen { ... }` | a full-screen view of the widget, opened with `screen()`; see Screens (owl 5) |
 | `every 10s { ... }`, `at t { ... }`, `when c { ... }`, `on x { ... }` | statements that run without a tap; see Triggers |
@@ -306,7 +307,7 @@ when lists reorder), and `let x = ...` inside any node.
 | `Shader` | an AGSL shader, below. Fills the space unless sized |
 | `Spacer` | empty space: `size`, `width`, `height` or `weight` |
 | `Slider` | a horizontal slider: `value`, `min` (0), `max` (100), `step`, `color`, `track`, `live`. `onChange` gets the chosen `value` when the finger lifts, or at every step while dragging with `live: true`. Full width and 28 dp tall unless sized (owl 4) |
-| `Input` | a one-line text field: `text` (what it shows; replaces what's typed when it changes), `placeholder`, `color`, `fontSize`, `clear: true` (empty it after submitting), `underline: false` (no line under it, for a field inside a frame of its own, owl 10), `focus: true` (focus it and raise the keyboard when the screen opens, or when `focus` turns true; only in a `screen { }`, owl 6). `onChange` gets the text as `value` as it's typed, `onSubmit` when the keyboard's send key is pressed (owl 4) |
+| `Input` | a one-line text field: `text` (what it shows; replaces what's typed when it changes), `placeholder`, `color`, `fontSize`, `clear: true` (empty it after submitting), `underline: false` (no line under it, for a field inside a frame of its own, owl 10), `password: true` (dots for what's typed, and a keyboard that neither suggests nor learns it, owl 12), `focus: true` (focus it and raise the keyboard when the screen opens, or when `focus` turns true; only in a `screen { }`, owl 6). `onChange` gets the text as `value` as it's typed, `onSubmit` when the keyboard's send key is pressed (owl 4) |
 | `Popup` | a menu over everything, the tile, the bar and other tiles, at the start of the node that holds it: `position: below` (the default) or `above`, kept on screen and on the other side when there's no room, `gap`, `align`. Show it with `visible`; a tap outside it or Back runs `onDismiss`, which it must have, so it can close: `Box { Text { text: "menu"; onTap: open = true }  Popup { visible: open; onDismiss: open = false; … } }`. Framed like the launcher's menus unless it has a `background` or `border`. It takes no room where it's written (owl 10) |
 | `Terminal` | a live terminal (foot) in the tile: `command` (default: the login shell), `fontSize` (points; foot.ini has 8). Fills the space unless sized. See below |
 
@@ -553,6 +554,31 @@ widget "pc" {
 The pin is what `openssl x509 -noout -fingerprint -sha256 -in cert.pem` prints, colons or not, and it can
 be a value: a pairing link's fingerprint, kept in a `persist` state. A server showing any other
 certificate fails with an error that says the SHA-256 it showed. A pinned request follows no redirects.
+
+A token or a password goes in a `secret` state (owl 12). It's kept across restarts encrypted with a key
+that never leaves the phone, apart from `persist` values, so Linux, a backup or a shared copy of the
+widget never holds it. It only goes into requests' headers and body, and the widget can ask whether it's
+set; showing it, putting it in a URL or a command, copying it or assigning it to another state is an
+error:
+
+```owl
+widget "nas" {
+  meta { owl: 12 }
+  state token = null secret
+  source files = http(token == null ? null : "https://nas.example.com/api/files", {Authorization: "Bearer ${token}"}) json
+  Column {
+    if token == null {
+      Input { placeholder: "API token"; password: true; onSubmit: token = value }
+    } else {
+      for f in files ?? [] { Text { text: f.name } }
+    }
+  }
+}
+```
+
+The `null` URL pauses the source until there's a token, so it doesn't ask with `Bearer …` (null as
+text). `token = null` forgets it. A secret is as safe as the widget's file: whoever can change the file can
+change where it's sent.
 
 ## Sounds
 

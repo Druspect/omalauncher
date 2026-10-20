@@ -255,6 +255,8 @@ sealed interface Global {
         val init: Ev,
         /** Saved across restarts. */
         val persist: Boolean = false,
+        /** `secret`: saved across restarts encrypted, apart from [persist]'s values; it only goes into requests. */
+        val secret: Boolean = false,
     ) : Global
 
     class Let(

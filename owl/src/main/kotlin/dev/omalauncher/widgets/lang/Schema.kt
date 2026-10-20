@@ -39,7 +39,7 @@ internal val KINDS: Map<String, Kind> =
         "Terminal" to Kind(setOf("command", "fontSize"), Children.NONE),
         // owl 4: input.
         "Slider" to Kind(setOf("value", "min", "max", "step", "color", "track", "live"), Children.NONE),
-        "Input" to Kind(setOf("text", "placeholder", "color", "fontSize", "clear", "focus", "underline"), Children.NONE),
+        "Input" to Kind(setOf("text", "placeholder", "color", "fontSize", "clear", "focus", "underline", "password"), Children.NONE),
         // owl 10: a menu over everything else, next to the node that holds it.
         "Popup" to Kind(setOf("position", "gap", "align"), Children.UI),
     )
@@ -122,7 +122,12 @@ internal val SINCE =
         // owl 12: how much of an app's top a camera cutout covers, once it hides the status bar.
         mapOf("screenTop" to 12) +
         // owl 12: servers with a certificate of their own, pinned; requests other than POST; base64 text.
-        listOf(HTTP_PIN, POST_METHOD, "fromBase64", "toBase64").associateWith { 12 }
+        listOf(HTTP_PIN, POST_METHOD, "fromBase64", "toBase64").associateWith { 12 } +
+        // owl 12: tokens kept encrypted, which only go into requests, and fields that hide what's typed.
+        listOf(SECRET, "Input.password").associateWith { 12 }
+
+/** `state x = null secret`, named like this in [SINCE]. */
+internal const val SECRET = "secret"
 
 /** `pin:` on http(...) and post(...), named like this in [SINCE]. */
 internal const val HTTP_PIN = "pin:"

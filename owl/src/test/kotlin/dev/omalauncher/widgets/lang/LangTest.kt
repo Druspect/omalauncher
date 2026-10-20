@@ -317,6 +317,29 @@ class LangTest {
         assertTrue(compileError("widget {\n meta { owl: 12 }\n source h = http(\"http://x.test/\", {}, pin: \"$pin\")\n Text { text: h } }").contains("pin: needs an https:// URL"))
     }
 
+    /** A secret only goes into a request's headers and body, or a check that it's set (owl 12). */
+    @Test fun secretsOnlyGoIntoRequests() {
+        val w = "widget {\n meta { owl: 12 }\n state token = null secret\n state out = null\n"
+        val p =
+            Compiler.compile(
+                w + " source s = http(token == null ? null : \"https://x.test/a\", {Authorization: \"Bearer ${'$'}{token}\"})\n" +
+                    " onTap: { if token == null { token = \"t\" } else { out = post(\"https://x.test/b\", {t: token}, {}) } }\n Text { text: token != \"\" ? \"in\" : \"out\" } }",
+            )
+        val host = TestHost(p)
+        assertEquals("in", (p.root.single() as WNode.Element).props["text"]!!(Env.root(host)).toString())
+        p.onTap!!.run(Env.root(host), emptyList())
+        p.onTap!!.run(Env.root(host), emptyList())
+        assertEquals(listOf("post 1 https://x.test/b {t: t} {}"), host.actions)
+        assertTrue((p.globals[0] as Global.State).secret)
+        for (leak in listOf("Text { text: token }", "Text { text: \"x\"; onTap: copy(token) }", "Text { text: \"x\"; onTap: run(\"echo ${'$'}{token}\") }", "Text { text: (token ?? \"\") == \"a\" }")) {
+            assertTrue(leak, compileError("$w $leak }").contains("token is a secret"))
+        }
+        compileError(w + " on token { out = 1 }\n Text { text: 1 } }").let { assertTrue(it, it.contains("token is a secret")) }
+        compileError(w + " source s = http(\"https://x.test/${'$'}{token}\")\n Text { text: 1 } }").let { assertTrue(it, it.contains("token is a secret")) }
+        compileError("widget {\n meta { owl: 12 }\n state token = null secret persist\n Text { text: 1 } }").let { assertTrue(it, it.contains("without persist")) }
+        compileError("widget {\n meta { owl: 11 }\n state token = null secret\n Text { text: 1 } }").let { assertTrue(it, it.contains("secret needs owl 12")) }
+    }
+
     @Test fun base64() {
         assertEquals("aGk/Pz4=", text("toBase64(\"hi??>\")", "meta { owl: 12 }"))
         // base64url, unpadded, as a pairing link carries JSON.
