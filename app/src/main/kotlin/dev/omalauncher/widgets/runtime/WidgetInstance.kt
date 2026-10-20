@@ -327,6 +327,13 @@ class WidgetInstance(
         screenInset.doubleValue = dp
     }
 
+    /** How much of the screen's top a camera cutout covers, in dp: only an app with `statusBar: false` draws there. */
+    private val screenTop = mutableDoubleStateOf(0.0)
+
+    fun setScreenTop(dp: Double) {
+        screenTop.doubleValue = dp
+    }
+
     /**
      * A panel's `query`: reads the prompt bar's text, set by home while the panel shows. A reader, not a copy, so what
      * reads `query` sees each keystroke in the frame it's typed, not one frame on.
@@ -342,6 +349,7 @@ class WidgetInstance(
                 "screenWidth" -> screenSize.value[0]
                 "screenHeight" -> screenSize.value[1]
                 "screenInset" -> screenInset.doubleValue
+                "screenTop" -> screenTop.doubleValue
                 "cols" -> tileSize.value[0]
                 "rows" -> tileSize.value[1]
                 "tileWidth" -> tileSize.value[2]

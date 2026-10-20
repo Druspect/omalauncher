@@ -22,7 +22,8 @@ interface Host {
     /**
      * The tile's size: cols and rows in grid cells, tileWidth and tileHeight in dp; null until it's laid out.
      * Also screenWidth and screenHeight (its screen's size), screenInset (how much of its bottom the
-     * navigation bar covers, for an app with `edge` and a face, or the keyboard while a face's field has it), linux: whether Linux is installed and running,
+     * navigation bar covers, for an app with `edge` and a face, or the keyboard while a face's field has it), screenTop (how
+     * much of an app's top a camera cutout covers, with `statusBar: false`), linux: whether Linux is installed and running,
      * and corners: the launcher's corner style as a radius scale, 0 (edge), 0.5 (soft) or 1 (round).
      */
     fun tile(name: String): Value = Null

@@ -118,7 +118,9 @@ internal val SINCE =
         // apps and what their long-press menu does; long lists built as they scroll into view; the bar's search ranking;
         // an app that hides the status bar.
         listOf(PANEL_FILE, QUERY, "onKey", "android.drawer", "appAction", "workApps", "shortcuts", APP_STATUS_BAR).associateWith { 11 } +
-        listOf("Column.lazy", "Grid.lazy", "Column.reverse", "Grid.reverse", "Image.label", "Text.minLines", "rank", "strongMatch", "chunk").associateWith { 11 }
+        listOf("Column.lazy", "Grid.lazy", "Column.reverse", "Grid.reverse", "Image.label", "Text.minLines", "rank", "strongMatch", "chunk").associateWith { 11 } +
+        // owl 12: how much of an app's top a camera cutout covers, once it hides the status bar.
+        mapOf("screenTop" to 12)
 
 internal const val FACE_FILE = "face \"…\" { }"
 
@@ -196,7 +198,7 @@ internal val ACTION_WORDS =
     )
 
 /** The tile's size, readable anywhere a declaration of the same name doesn't shadow it. */
-internal val TILE = setOf("cols", "rows", "tileWidth", "tileHeight", "screenWidth", "screenHeight", "screenInset", "corners")
+internal val TILE = setOf("cols", "rows", "tileWidth", "tileHeight", "screenWidth", "screenHeight", "screenInset", "screenTop", "corners")
 
 /** Builtins that always give a number (or null, which reads as …). */
 internal val NUMBERS = setOf("int", "round", "floor", "ceil", "abs", "fixed", "len", "count", "sum", "min", "max", "clamp")

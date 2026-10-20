@@ -24,7 +24,7 @@ class Compiler private constructor(
          * instead of failing on what they don't know. Bump it with every
          * addition a widget could depend on: nodes, properties, builtins.
          */
-        const val LEVEL = 11
+        const val LEVEL = 12
         private const val MAX_ASSET_BYTES = 2 shl 20
 
         /** Pages as far out as a file can ask for; past Int's range, the pages either side of them would wrap. */
@@ -1218,6 +1218,10 @@ class Compiler private constructor(
         // A widget's screen always ends above the navigation bar; only an app with `edge` runs under it.
         if (e.name == "screenInset" && ast.kind != OwlKind.App && !(isFace && inScreen != true)) {
             fail("screenInset is for apps with edge: true and faces; a widget's screen ends above the navigation bar", e.pos)
+        }
+        // Only an app runs up to the top edge, with statusBar: false; a face and a widget's screen stay clear of the cutout.
+        if (e.name == "screenTop" && ast.kind != OwlKind.App) {
+            fail("screenTop is for apps with statusBar: false; a face and a widget's screen start below the camera", e.pos)
         }
         // Not reserved: widgets that already declare `rows` or `cols` keep their own.
         if (e.name in TILE || e.name == LINUX) {

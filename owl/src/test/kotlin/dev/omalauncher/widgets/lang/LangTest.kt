@@ -837,6 +837,13 @@ class LangTest {
         Compiler.compile("widget {\n let screenInset = 0\n Text { text: screenInset } }")
     }
 
+    @Test fun appsWithoutAStatusBarStepAroundTheCamera() {
+        Compiler.compile("app {\n meta { owl: 12 }\n statusBar: false\n Column { padding: [12, screenTop, 12, 0]\n Text { text: 1 } } }")
+        assertTrue(compileError("app {\n meta { owl: 11 }\n statusBar: false\n Spacer { height: screenTop } }").contains("needs owl 12"))
+        assertTrue(compileError("face {\n meta { owl: 12 }\n Spacer { height: screenTop } }").contains("screenTop is for apps"))
+        assertTrue(compileError("widget {\n meta { owl: 12 }\n Text { text: 1 }\n screen { Text { text: screenTop } } }").contains("screenTop is for apps"))
+    }
+
     @Test fun longPressIsForPagesAppsAndScreens() {
         Compiler.compile("face {\n meta { owl: 10 }\n Text { text: 1; onLongPress: close() }\n screen { Text { text: 2 } } }")
         Compiler.compile("app {\n meta { owl: 10 }\n state n = 0\n Text { text: n; onLongPress: n = x } }")
