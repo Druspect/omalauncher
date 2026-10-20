@@ -42,6 +42,8 @@ internal val KINDS: Map<String, Kind> =
         "Input" to Kind(setOf("text", "placeholder", "color", "fontSize", "clear", "focus", "underline", "password"), Children.NONE),
         // owl 10: a menu over everything else, next to the node that holds it.
         "Popup" to Kind(setOf("position", "gap", "align"), Children.UI),
+        // owl 12: a terminal's output with its colors (tmux capture-pane -e), one line per row, following its end.
+        "Ansi" to Kind(setOf("text", "fontSize", "minFontSize", "pan"), Children.NONE),
     )
 
 internal val COMMON =
@@ -126,10 +128,15 @@ internal val SINCE =
         // owl 12: tokens kept encrypted, which only go into requests, and fields that hide what's typed.
         listOf(SECRET, "Input.password").associateWith { 12 } +
         // owl 12: WebSockets, a server's messages as a source and messages back to it.
-        listOf("ws", "send").associateWith { 12 }
+        listOf("ws", "send").associateWith { 12 } +
+        // owl 12: a terminal's colored output, and Back for a widget or face that's holding on to something.
+        listOf("Ansi", "onGrid", TILE_BACK).associateWith { 12 }
 
 /** `state x = null secret`, named like this in [SINCE]. */
 internal const val SECRET = "secret"
+
+/** `back` and `onBack` on a widget or a face, named like this in [SINCE]; apps have had them since owl 8. */
+internal const val TILE_BACK = "back and onBack on a widget or face"
 
 /** `pin:` on http(...) and post(...), named like this in [SINCE]. */
 internal const val HTTP_PIN = "pin:"
@@ -183,12 +190,14 @@ internal val HANDLER_PARAMS =
         "onChange" to listOf("value"),
         "onSubmit" to listOf("value"),
         "onDismiss" to emptyList(),
+        // An Ansi's: the columns and rows that fit it at its fontSize, as {columns, rows}.
+        "onGrid" to listOf("value"),
         // A panel's, at its top: a key pressed in the prompt bar while it's open.
         "onKey" to listOf("value"),
     )
 
 /** Handlers only some nodes have. */
-internal val HANDLER_KINDS = mapOf("onChange" to setOf("Slider", "Input"), "onSubmit" to setOf("Input"), "onDismiss" to setOf("Popup"))
+internal val HANDLER_KINDS = mapOf("onChange" to setOf("Slider", "Input"), "onSubmit" to setOf("Input"), "onDismiss" to setOf("Popup"), "onGrid" to setOf("Ansi"))
 
 /** What triggers bind in their statements. */
 internal val TRIGGER_PARAMS = mapOf("on" to listOf("value", "old"))
@@ -221,7 +230,7 @@ internal val TILE = setOf("cols", "rows", "tileWidth", "tileHeight", "screenWidt
 /** Builtins that always give a number (or null, which reads as …). */
 internal val NUMBERS = setOf("int", "round", "floor", "ceil", "abs", "fixed", "len", "count", "sum", "min", "max", "clamp")
 
-internal val WIDGET_PROPS = setOf("size", "minSize", "page", "order", "padding", "background")
+internal val WIDGET_PROPS = setOf("size", "minSize", "page", "order", "padding", "background", "back")
 
 /** A face has no tile's size; it says where it goes and whether the status bar stays over it. */
-internal val FACE_PROPS = setOf("page", "order", "padding", "background", "statusBar")
+internal val FACE_PROPS = setOf("page", "order", "padding", "background", "statusBar", "back")

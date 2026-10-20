@@ -169,7 +169,7 @@ class Compiler private constructor(
         if (body.animations.isNotEmpty()) fail("animate belongs inside a node", body.animations[0].pos)
         // An app and a panel check their own (onBack, onSubmit).
         if (ast.kind != OwlKind.App && ast.kind != OwlKind.Panel) {
-            for (h in body.handlers) if (h.name != "onTap") fail("a ${ast.kind.word} only takes onTap at the top level", h.pos)
+            for (h in body.handlers) if (h.name != "onTap" && h.name != "onBack") fail("a ${ast.kind.word} only takes onTap and onBack at the top level", h.pos)
         }
 
         // Sources, state and assets first: lets and components may use any of them.
@@ -231,7 +231,9 @@ class Compiler private constructor(
         if (rootNodes.isEmpty()) fail("a widget needs at least one node, like Text { text: \"hi\" }", 0)
         val tileNodes = nodes
         val screen = screens.firstOrNull()?.let { screen(it) }
-        val onTap = body.handlers.firstOrNull()?.let { handler(it, root) }
+        val onTap = body.handlers.firstOrNull { it.name == "onTap" }?.let { handler(it, root) }
+        // While `back` holds and its page shows, Back runs onBack: a terminal let go, a view stepped out of.
+        val (back, onBack) = back(body)?.also { since(TILE_BACK, body.props.first { it.name == "back" }.pos) } ?: (null to null)
         if (screen == null) screenAction?.let { fail("screen() and close() need a screen { } block in the widget", it) }
         val background = props["background"]?.let { if (gradient(it.value)) since(GRADIENT_BACKGROUND, it.pos); ex(it.value, root) }
         // Whether the status bar stays over a face, read as it changes: a face can hide it for a game and bring it back.
@@ -257,6 +259,8 @@ class Compiler private constructor(
             screen = screen?.first,
             screenTitle = screen?.second,
             onTap = onTap,
+            back = back,
+            onBack = onBack,
             triggers = triggers,
             commands = commands.toList(),
             warnings = warnings.toList(),
@@ -311,12 +315,6 @@ class Compiler private constructor(
                 svg
             }
         body.handlers.firstOrNull { it.name != "onBack" }?.let { fail("handlers go on the nodes inside an app; only onBack goes at its top", it.pos) }
-        // Back goes up a level inside the app while `back` is true, and closes it otherwise.
-        val backProp = body.props.firstOrNull { it.name == "back" }
-        val onBackHandler = body.handlers.firstOrNull { it.name == "onBack" }
-        if ((backProp == null) != (onBackHandler == null)) {
-            fail("back and onBack go together: back: view != \"list\" says when Back goes up a level, onBack: view = \"list\" does it", (backProp?.pos ?: onBackHandler!!.pos))
-        }
         body.items.firstOrNull { it is Item.Node && it.type == "screen" }?.let { fail("an app is a screen already: put its nodes at the top, without screen { }", it.pos) }
         nodes = 0
         maxNodes = MAX_SCREEN_NODES
@@ -326,8 +324,8 @@ class Compiler private constructor(
         openScreen?.let { fail("screen() opens a widget's screen { }; an app is open already, and close() closes it", it) }
         // Before the level check, which counts what they use.
         val title = body.props.firstOrNull { it.name == "title" }?.let { ex(it.value, root) }
-        val back = backProp?.let { ex(it.value, root) }
-        val onBack = onBackHandler?.let { handler(it, root) }
+        // Back goes up a level inside the app while `back` is true, and closes it otherwise.
+        val (back, onBack) = back(body) ?: (null to null)
         checkLevel(level)
         return Program(
             name = ast.name ?: "app",
@@ -405,6 +403,18 @@ class Compiler private constructor(
             kind = ast.kind,
         )
     }
+
+    /** `back` and `onBack`, which go together: when Back is the file's own, and what it does then. */
+    private fun backPair(body: Body): Pair<Prop, Handler>? {
+        val backProp = body.props.firstOrNull { it.name == "back" }
+        val onBackHandler = body.handlers.firstOrNull { it.name == "onBack" }
+        if ((backProp == null) != (onBackHandler == null)) {
+            fail("back and onBack go together: back: view != \"list\" says when Back goes up a level, onBack: view = \"list\" does it", (backProp?.pos ?: onBackHandler!!.pos))
+        }
+        return backProp?.let { it to onBackHandler!! }
+    }
+
+    private fun back(body: Body): Pair<Ev, Action>? = backPair(body)?.let { (p, h) -> ex(p.value, root) to handler(h, root) }
 
     /** The screen { } block: its nodes, and its title if it sets one. */
     private fun screen(n: Item.Node): Pair<List<WNode>, Ev?> {

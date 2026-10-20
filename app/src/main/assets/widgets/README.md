@@ -91,8 +91,9 @@ that read it redraw. Properties are separated by newlines or `;`.
 | `asset logo = base64"iVBOR..."` | an embedded image (under 2 MB) for `Image { src: logo }`, or a font for `font: logo` (owl 10, see Fonts), so the widget is one self-contained file |
 | `requires { pacman: ["jq", "curl"] }` | packages the widget's commands need; see Dependencies |
 | `meta { description: "..."; version: "1.0"; license: "MIT"; category: "news" }` | needed to publish to the widget store (see Sharing) |
-| `meta { owl: 11 }` | the language version the widget needs (this launcher has 12; the default is 1). Older launchers say "update the launcher" instead of failing on what they don't know. `Terminal` needs 2, `sprite` 3, triggers, `file`, `Slider`, `Input`, `android.notifications`, `android.volume`, `volume` and `notification` need 4, and `screen { }`, `screen()`, `close()`, `screenWidth` and `screenHeight` need 5, `Input`'s `focus`, `sh()` and `corners` 6, and `android.alarm`, `android.modes`, `torch`, `share` and `haptic` 7, and `app "…" { }` files, `android.apps`, `enc`, `post`, images from the web, `sound` and `screenInset` 8, and `parseTime`, `fmtAgo`, `fmtNum`, `random`, `shuffle`, `hash`, `fmtTime`'s zone and language, `set`, `remove`, `merge`, `reduce`, `scan`, `groupBy`, `toJson`, `capitalize`, `asin`, `acos`, `flatten`'s depth, `on … first`, and `if` and `let` in handlers 9, and `face "…" { }` files, `onLongPress`, Text's `spans`, `fontWeight` and `letterSpacing`, gradient backgrounds, `frost`, fonts of a widget's own and Canvas `text`'s `font`, `fontWeight`, `italic` and `letterSpacing`, `android.agents`, `android.recent`, `open`, `ask`, `Popup` and Input's `underline` 10, and `android.drawer`, `appAction`, `workApps`, `rank`, `strongMatch`, `chunk`, Column's and Grid's `lazy`, `panel "…" { }` files with `query`, `enter`, `onSubmit` and `onKey`, `shortcuts`, Column's and Grid's `reverse`, Image's `label`, Text's `minLines`, an app's `statusBar` and a Column in a Row as wide as its content 11, and `screenTop`, `pin:` and `method:` on `http`/`post`, `toBase64`, `fromBase64`, `secret` states, Input's `password`, `ws` and `send` 12; using them without declaring it is an error |
+| `meta { owl: 11 }` | the language version the widget needs (this launcher has 12; the default is 1). Older launchers say "update the launcher" instead of failing on what they don't know. `Terminal` needs 2, `sprite` 3, triggers, `file`, `Slider`, `Input`, `android.notifications`, `android.volume`, `volume` and `notification` need 4, and `screen { }`, `screen()`, `close()`, `screenWidth` and `screenHeight` need 5, `Input`'s `focus`, `sh()` and `corners` 6, and `android.alarm`, `android.modes`, `torch`, `share` and `haptic` 7, and `app "…" { }` files, `android.apps`, `enc`, `post`, images from the web, `sound` and `screenInset` 8, and `parseTime`, `fmtAgo`, `fmtNum`, `random`, `shuffle`, `hash`, `fmtTime`'s zone and language, `set`, `remove`, `merge`, `reduce`, `scan`, `groupBy`, `toJson`, `capitalize`, `asin`, `acos`, `flatten`'s depth, `on … first`, and `if` and `let` in handlers 9, and `face "…" { }` files, `onLongPress`, Text's `spans`, `fontWeight` and `letterSpacing`, gradient backgrounds, `frost`, fonts of a widget's own and Canvas `text`'s `font`, `fontWeight`, `italic` and `letterSpacing`, `android.agents`, `android.recent`, `open`, `ask`, `Popup` and Input's `underline` 10, and `android.drawer`, `appAction`, `workApps`, `rank`, `strongMatch`, `chunk`, Column's and Grid's `lazy`, `panel "…" { }` files with `query`, `enter`, `onSubmit` and `onKey`, `shortcuts`, Column's and Grid's `reverse`, Image's `label`, Text's `minLines`, an app's `statusBar` and a Column in a Row as wide as its content 11, and `screenTop`, `pin:` and `method:` on `http`/`post`, `toBase64`, `fromBase64`, `secret` states, Input's `password`, `ws`, `send`, `Ansi`, `onGrid` and `back`/`onBack` on a widget or face 12; using them without declaring it is an error |
 | `onTap: ...` | runs when the tile (not a button inside it) is tapped |
+| `back: active` and `onBack: active = false` | while `back` holds and the widget's page shows, Back on home runs `onBack`: a tile lets go of what it took (a terminal it pans, a view it opened) before Back does what it does on home. On a face too (owl 12); an app's are in Apps |
 | `screen { ... }` | a full-screen view of the widget, opened with `screen()`; see Screens (owl 5) |
 | `every 10s { ... }`, `at t { ... }`, `when c { ... }`, `on x { ... }` | statements that run without a tap; see Triggers |
 | `padding: 12` / `background: ...` | the tile's padding (dp) and background |
@@ -183,7 +184,8 @@ second is held back and reported (one that changes what it watches would otherwi
 
 - Numbers `12`, `0.5`, `3x2`; durations `500ms`, `2s`, `5m`, `1h` (in seconds). Strings are
   `"hi ${name}"` (interpolated) or `'raw $text'` (handy for shell commands).
-  Also `"""multi-line"""`, `true`/`false`/`null`, lists `[1, 2]` and maps `{a: 1}`.
+  Also `"""multi-line"""`, `true`/`false`/`null`, lists `[1, 2]` and maps `{a: 1}`. In `"…"`, `\n`, `\t`, `\r`
+  and `\e` (Escape, for a terminal's keys: `"\e[A"` is the up arrow) stand for those characters.
 - Operators: `+ - * / %`, `== != < <= > >=`, `&& || !`, `a ?? b` (b if a is null), `c ? a : b`.
 - Paths: `info.list[0].name` or `info.list.0.name`. Anything missing is `null`, never an error.
 - Command output is text, but numeric text acts like a number: `used > 80` works on `"81"`.
@@ -311,6 +313,7 @@ when lists reorder), and `let x = ...` inside any node.
 | `Input` | a one-line text field: `text` (what it shows; replaces what's typed when it changes), `placeholder`, `color`, `fontSize`, `clear: true` (empty it after submitting), `underline: false` (no line under it, for a field inside a frame of its own, owl 10), `password: true` (dots for what's typed, and a keyboard that neither suggests nor learns it, owl 12), `focus: true` (focus it and raise the keyboard when the screen opens, or when `focus` turns true; only in a `screen { }`, owl 6). `onChange` gets the text as `value` as it's typed, `onSubmit` when the keyboard's send key is pressed (owl 4) |
 | `Popup` | a menu over everything, the tile, the bar and other tiles, at the start of the node that holds it: `position: below` (the default) or `above`, kept on screen and on the other side when there's no room, `gap`, `align`. Show it with `visible`; a tap outside it or Back runs `onDismiss`, which it must have, so it can close: `Box { Text { text: "menu"; onTap: open = true }  Popup { visible: open; onDismiss: open = false; … } }`. Framed like the launcher's menus unless it has a `background` or `border`. It takes no room where it's written (owl 10) |
 | `Terminal` | a live terminal (foot) in the tile: `command` (default: the login shell), `fontSize` (points; foot.ini has 8). Fills the space unless sized. See below |
+| `Ansi` | a terminal's output with its colors, from text with escape codes (what `tmux capture-pane -e` prints): one line per row, never wrapped, in the theme's `color0`…`color15`, with 256 colors, true color, bold, dim, italic, underline and inverse. `fontSize` (default 11) shrinks down to `minFontSize` until the widest line fits. It scrolls and follows the end while it's there; `pan: true` scrolls it sideways too. `onGrid` gets `{columns, rows}`, what fits at `fontSize`, when that changes. Fills the space unless sized. See Live terminals (owl 12) |
 
 Every node also takes:
 
@@ -322,7 +325,7 @@ Every node also takes:
   anything else matches it with `radius: 8 * corners`)
 - `opacity`, `rotation` (degrees), `scale`, `offset: [x, y]` (dp), `visible`
 - handlers: `onTap` (with `x`, `y`) and `onDrag` (with `dx`, `dy`, `x`, `y`); `Slider` and `Input` also take
-  `onChange`, and `Input` `onSubmit`, both with `value`; `Popup` takes `onDismiss`. In pages, apps and a widget's `screen { }`,
+  `onChange`, and `Input` `onSubmit`, both with `value`; `Popup` takes `onDismiss`, and `Ansi` `onGrid` with `value`. In pages, apps and a widget's `screen { }`,
   `onLongPress` (with `x`, `y`, owl 10); on a tile, long-press belongs to the home screen, which uses it
   to move and resize tiles
 - `animate prop: spring()` or `tween(300ms, "linear"/"in"/"out"/"ease")`, for `value`,
@@ -1002,6 +1005,42 @@ widget "shell" {
   is removed or its file changes. When `command` exits, the tile offers a restart;
   use `"btop; exec bash"` to fall back to a shell.
 - `padding: 0` lets the terminal fill the tile's frame.
+
+### Live terminals
+
+A terminal running somewhere else (an agent on your PC, a server's log) reaches a widget as text with
+escape codes, over `ws(...)` or `http(...)`. `Ansi` draws it in the theme's colors (owl 12). A tile takes
+touch only once tapped, so swipes still turn pages; `back` and `onBack` let Back release it:
+
+```owl
+widget "agent" {
+  size: 6x4
+  meta { owl: 12 }
+  state active = false
+  state grid = null
+  source term = ws("wss://pc.lan:8759/harnesses/1/stream?viewport=1", {}, pin: "3F:A1:5C:0B:6E:2D:88:41:9A:C7:13:F0:52:BE:64:D9:07:A3:1E:C8:95:4F:2B:D6:70:18:E3:AC:59:06:B4:9C") json status
+  // The PC sizes the pane to what fits, and forgets a size it doesn't hear again within 30 s.
+  when term.open && grid != null { send(term, {type: "viewport", columns: grid.columns, rows: grid.rows}) }
+  every 10s { send(term, {type: "viewport", columns: grid.columns ?? 80, rows: grid.rows ?? 24}) }
+  back: active
+  onBack: active = false
+  Column {
+    gap: 6
+    Ansi { text: term.out.tailAnsi ?? ""; minFontSize: 7; pan: active; weight: 1; onTap: active = true; onGrid: grid = value }
+    if active {
+      Row {
+        gap: 6
+        Button { text: "esc"; onTap: post("https://pc.lan:8759/harnesses/1/keys", {text: "\e", enter: false}, {}, pin: "3F:A1:5C:0B:6E:2D:88:41:9A:C7:13:F0:52:BE:64:D9:07:A3:1E:C8:95:4F:2B:D6:70:18:E3:AC:59:06:B4:9C") }
+        Button { text: "done"; onTap: active = false }
+      }
+    }
+  }
+}
+```
+
+Each message replaces the text, so it suits a program that sends its whole screen (or its last few hundred
+lines) each time. Lines the text doesn't change keep what was drawn for them, and new text is drawn at
+most every 80 ms, so a busy program costs little.
 
 ## Home's layout
 

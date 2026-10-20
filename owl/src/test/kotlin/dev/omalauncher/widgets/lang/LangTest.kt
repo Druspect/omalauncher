@@ -378,6 +378,33 @@ class LangTest {
         compileError("widget {\n meta { owl: 11 }\n source s = ws(\"wss://x.test/\")\n Text { text: s } }").let { assertTrue(it, it.contains("ws needs owl 12")) }
     }
 
+    /** Ansi draws a terminal's colored output and tells its grid; a widget or face may take Back while it holds something (owl 12). */
+    @Test fun ansiAndTileBack() {
+        val p =
+            Compiler.compile(
+                "widget {\n meta { owl: 12 }\n state active = false\n state grid = null\n back: active\n onBack: active = false\n" +
+                    " Ansi { text: \"x\"; fontSize: 11; minFontSize: 7; pan: active; onTap: active = true; onGrid: grid = value } }",
+            )
+        val host = TestHost(p)
+        assertEquals(FALSE, p.back!!(Env.root(host)))
+        val ansi = p.root.single() as WNode.Element
+        ansi.handlers["onTap"]!!.run(Env.root(host), emptyList())
+        assertEquals(TRUE, p.back!!(Env.root(host)))
+        p.onBack!!.run(Env.root(host), emptyList())
+        assertEquals(FALSE, host.slots[0])
+        ansi.handlers["onGrid"]!!.run(Env.root(host), listOf(Obj(mapOf("columns" to Num(80.0), "rows" to Num(24.0)))))
+        assertEquals(Num(80.0), (host.slots[1] as Obj).fields["columns"])
+        // A face too, and its onTap still works next to onBack.
+        Compiler.compile("face \"f\" {\n meta { owl: 12 }\n state a = 1\n back: a > 1\n onBack: a = 1\n onTap: a = 2\n Text { text: a } }").let { assertTrue(it.onTap != null && it.onBack != null) }
+
+        val w = "widget {\n meta { owl: 12 }\n state a = false\n"
+        compileError(w + " back: a\n Text { text: 1 } }").let { assertTrue(it, it.contains("back and onBack go together")) }
+        compileError(w + " Text { text: 1; onGrid: a = true } }").let { assertTrue(it, it.contains("onGrid only works on Ansi")) }
+        compileError(w + " Ansi { text: 1; fit: 7 } }").let { assertTrue(it, it.contains("Ansi has no property 'fit'")) }
+        compileError("widget {\n meta { owl: 11 }\n Ansi { text: 1 } }").let { assertTrue(it, it.contains("Ansi needs owl 12")) }
+        compileError("widget {\n meta { owl: 11 }\n state a = false\n back: a\n onBack: a = false\n Text { text: 1 } }").let { assertTrue(it, it.contains("needs owl 12")) }
+    }
+
     @Test fun base64() {
         assertEquals("aGk/Pz4=", text("toBase64(\"hi??>\")", "meta { owl: 12 }"))
         // base64url, unpadded, as a pairing link carries JSON.

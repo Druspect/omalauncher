@@ -339,7 +339,10 @@ class Program(
     /** The screen { } block: a full-screen view over the same globals, opened with screen(). */
     val screen: List<WNode>? = null,
     val screenTitle: Ev? = null,
-    /** An app's `back`: while true, the frame shows a back chevron and Back runs [onBack] instead of closing it. */
+    /**
+     * `back`: while true, Back runs [onBack]. In an app the frame shows a back chevron and Back doesn't close it;
+     * on a widget or a face, it's Back on home while its page shows (owl 12).
+     */
     val back: Ev? = null,
     val onBack: Action? = null,
     /** An app's `edge`: its view runs on under the navigation bar, which `screenInset` measures. */

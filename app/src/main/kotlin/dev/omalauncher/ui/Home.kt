@@ -108,6 +108,9 @@ fun HomeScreen(
     var menuFor by remember { mutableStateOf<HomeItem?>(null) }
 
     val terminals = runtime.terminals
+    // A widget holding on to something (a terminal it took touch for) lets go first; what home shows over it comes before.
+    val holding = engine.holdingBack(slots.getOrNull(pager.currentPage).orEmpty())
+    BackHandler(enabled = holding != null) { holding?.goUp() }
     BackHandler(enabled = terminals.typing) { terminals.deactivate() }
     BackHandler(enabled = state.homeMenuOpen) { state.homeMenuOpen = false }
     BackHandler(enabled = state.editing != null && !state.homeMenuOpen) { state.editing = null }

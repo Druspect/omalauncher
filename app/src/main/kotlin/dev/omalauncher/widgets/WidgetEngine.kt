@@ -286,6 +286,13 @@ class WidgetEngine(
         return instance(spec)?.takeIf { it.program.screen != null }?.let { spec to it }
     }
 
+    /**
+     * A widget or face on [pages] whose `back` holds now, so Back on home runs its onBack (a terminal it lets go
+     * of); null when Back is home's own. Read in composition, it follows the widget's state.
+     */
+    fun holdingBack(pages: List<Int>): WidgetInstance? =
+        specs.filter { onHome(it) && it.page in pages }.firstNotNullOfOrNull { s -> instance(s)?.takeIf { it.canGoUp() } }
+
     /** The page on screen; widgets on it and its neighbours stay live, the rest pause. */
     var activePage by mutableIntStateOf(1)
 

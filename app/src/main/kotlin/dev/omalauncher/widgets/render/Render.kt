@@ -657,6 +657,7 @@ private fun Element(
         "Spacer" -> Spacer(mod)
         "Slider" -> SliderNode(p, mod, sized)
         "Input" -> InputNode(p, mod, sized)
+        "Ansi" -> AnsiNode(p, mod, sized)
         "Terminal" -> {
             val command = p.observe("command")
             val fontSize = p.observe("fontSize")?.num()
